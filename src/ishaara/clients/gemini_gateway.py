@@ -3,7 +3,9 @@
 import asyncio
 import base64
 import contextlib
+import functools
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -57,6 +59,10 @@ NARRATION_ATTEMPTS = 2
 ANALYSIS_TIMEOUT_SECONDS = 300.0
 TTS_TIMEOUT_SECONDS = 30.0
 DEADLINE_MARGIN_SECONDS = 5.0
+# Blocking SDK calls get their own threads. On a 1-CPU Cloud Run instance the default pool has 5
+# threads, shared with Firebase token verification: a few slow Gemini calls would leave every
+# authenticated request waiting for a thread.
+GEMINI_THREADS = 16
 MAX_ATTEMPTS = 3
 SPEECH_STYLE = "calm and clear"
 SPEECH_LANGUAGE_CODES = {NarrationLanguage.ENGLISH: "en-US", NarrationLanguage.HINDI: "hi-IN"}
@@ -274,8 +280,9 @@ class GoogleGeminiGateway:
         settings: Application settings providing the API key and model ids.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, threads: int = GEMINI_THREADS) -> None:
         """Store settings; the SDK client is created lazily."""
+        self._executor = ThreadPoolExecutor(max_workers=threads, thread_name_prefix="gemini-sdk")
         self._settings = settings
         self._sdk_client: genai.Client | None = None
         self._speech_limiter = RateLimiter(settings.tts_requests_per_minute)
@@ -288,6 +295,10 @@ class GoogleGeminiGateway:
                 api_key=self._settings.gemini_api_key, http_options=sdk_http_options()
             )
         return self._sdk_client
+
+    def close(self) -> None:
+        """Release the SDK threads without waiting for calls that may be stuck."""
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     async def analyze_clip(self, youtube_video_id: str, window: ClipWindow) -> AnalyzeClipResult:
         """Pass 1: analyze one window of a public YouTube video.
@@ -403,8 +414,9 @@ class GoogleGeminiGateway:
         }
         if generation_config:
             request["generation_config"] = generation_config
+        call = functools.partial(self._client.interactions.create, **request)
         interaction = await asyncio.wait_for(
-            asyncio.to_thread(self._client.interactions.create, **request),
+            asyncio.get_running_loop().run_in_executor(self._executor, call),
             timeout=timeout + DEADLINE_MARGIN_SECONDS,
         )
         if not isinstance(interaction, interactions.Interaction):

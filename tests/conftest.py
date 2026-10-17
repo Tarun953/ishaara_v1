@@ -118,8 +118,11 @@ class FakeGeminiGateway:
 class FakeBlobStorage:
     """Keeps uploads in memory; can be told to fail specific uploads."""
 
-    def __init__(self, fail_private: bool = False, fail_public: bool = False) -> None:
+    def __init__(
+        self, fail_private: bool = False, fail_public: bool = False, public_failures: int = 0
+    ) -> None:
         self.fail_public = fail_public
+        self.public_failures = public_failures  # uploads to fail before one succeeds
         self.public: dict[str, bytes] = {}
         self.private: dict[str, bytes] = {}
         self.fail_private = fail_private
@@ -129,6 +132,9 @@ class FakeBlobStorage:
     ) -> str:
         if self.fail_public:
             raise StorageError("public storage is down")
+        if self.public_failures > 0:
+            self.public_failures -= 1
+            raise StorageError("public storage hiccup")
         self.public[path] = data
         return f"https://audio.test/{path}"
 

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from ishaara.clients.memory_repository import InMemoryVideoRepository
 from ishaara.errors import GeminiError
 from ishaara.models.domain import NarrationLanguage, PipelineStage, ReferentKind, VideoStatus
@@ -144,7 +146,7 @@ async def test_progress_never_goes_backwards_and_covers_every_stage() -> None:
     assert videos.progress[-1] == (PipelineStage.SAVING, 99)
 
 
-async def test_a_cue_that_keeps_failing_stays_silent_but_the_job_succeeds() -> None:
+async def test_a_cue_whose_speech_fails_stays_silent_and_is_not_retried_again_here() -> None:
     videos, clock = await _setup()
     gateway = FlakySpeechGateway(
         {0: _analysis(("00:10", "good slide"), ("05:00", "BROKEN slide"))}, failures={"BROKEN": 99}
@@ -159,18 +161,48 @@ async def test_a_cue_that_keeps_failing_stays_silent_but_the_job_succeeds() -> N
     assert good.audio_url is not None
     assert broken.audio_url is None and broken.audio_duration_seconds is None
     assert broken.narration_text  # the text is still available for the screen reader
-    assert gateway.speech_calls == 1 + 3  # one for the good cue, three attempts for the broken one
+    # the real gateway already retries a failing Gemini call; repeating it here would multiply
+    # the waits, so a Gemini failure costs exactly one call
+    assert gateway.speech_calls == 1 + 1
 
 
-async def test_a_transient_speech_failure_is_retried_and_succeeds() -> None:
+async def test_a_storage_hiccup_while_saving_audio_is_retried_and_succeeds() -> None:
     videos, clock = await _setup()
-    gateway = FlakySpeechGateway({0: _analysis(("00:10", "wobbly slide"))}, failures={"wobbly": 2})
+    gateway = FakeGeminiGateway({0: _analysis(("00:10", "wobbly slide"))})
+    storage = FakeBlobStorage(public_failures=2)
 
-    await _pipeline(videos, gateway, FakeBlobStorage(), clock).run(VIDEO_KEY)
+    await _pipeline(videos, gateway, storage, clock).run(VIDEO_KEY)
 
     stored = await videos.get(VIDEO_KEY)
     assert stored is not None and stored.cues[0].audio_url is not None
-    assert gateway.speech_calls == 3
+    assert storage.public_failures == 0  # it took the two failures and then succeeded
+
+
+async def test_speech_that_never_answers_cannot_hold_the_job_past_the_voicing_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import time
+
+    from ishaara.pipeline import orchestrator
+
+    class HangingSpeechGateway(FakeGeminiGateway):
+        async def synthesize_speech(self, narration_text, narration_language):  # type: ignore[no-untyped-def]
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(orchestrator, "VOICING_BASE_SECONDS", 0.1)
+    monkeypatch.setattr(orchestrator, "VOICING_PER_CUE_SECONDS", 0.0)
+    videos, clock = await _setup()
+    gateway = HangingSpeechGateway({0: _analysis(("00:10", "a"), ("05:00", "b"))})
+    started = time.monotonic()
+
+    await _pipeline(videos, gateway, FakeBlobStorage(), clock).run(VIDEO_KEY)
+
+    assert time.monotonic() - started < 3
+    stored = await videos.get(VIDEO_KEY)
+    assert stored is not None and stored.status == VideoStatus.READY
+    assert [cue.audio_url for cue in stored.cues] == [None, None]
+    assert all(cue.narration_text for cue in stored.cues)
 
 
 async def test_incomplete_narration_fails_the_job_with_its_code() -> None:

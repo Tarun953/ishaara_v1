@@ -13,7 +13,7 @@ from ishaara.clients.gemini_gateway import AnalyzeClipResult, GeminiGateway, Jud
 from ishaara.clients.repositories import VideoRepository
 from ishaara.clients.youtube_metadata import VideoMetadataSource
 from ishaara.clock import Clock, utc_now
-from ishaara.errors import IshaaraError, StorageError
+from ishaara.errors import GeminiError, IshaaraError, StorageError
 from ishaara.models.domain import NarrationCue, PipelineStage, VideoRecord
 from ishaara.pipeline.audio import wav_duration_seconds
 from ishaara.pipeline.chunking import ClipWindow, plan_clip_windows
@@ -31,7 +31,12 @@ MERGE_DONE_PERCENT = 75
 NARRATION_DONE_PERCENT = 80
 VOICING_END_PERCENT = 98
 SAVING_PERCENT = 99
-TTS_ATTEMPTS = 3  # first try plus two retries
+TTS_ATTEMPTS = 3  # first try plus two retries, for storage and audio problems only
+# The Gemini gateway already retries a failed speech call; trying again here would multiply the
+# waits (3 x 3), so a Gemini failure leaves the cue silent after the gateway has given up.
+VOICING_BASE_SECONDS = 60.0
+VOICING_PER_CUE_SECONDS = 30.0
+VOICING_MAX_SECONDS = 1800.0
 AUDIO_CACHE_CONTROL = "public, max-age=31536000"
 
 ProgressReporter = Callable[[int, int], Awaitable[None]]
@@ -254,17 +259,37 @@ class VideoPipeline:
         report = self._progress_reporter(
             record.video_key, PipelineStage.VOICING, NARRATION_DONE_PERCENT, VOICING_END_PERCENT
         )
+        budget_seconds = min(
+            VOICING_BASE_SECONDS + VOICING_PER_CUE_SECONDS * len(cues), VOICING_MAX_SECONDS
+        )
+        deadline = time.monotonic() + budget_seconds
         cues_done = 0
 
         async def voice_one(cue: NarrationCue) -> NarrationCue:
             nonlocal cues_done
             async with semaphore:
-                voiced = await self._voice_with_retries(record, cue, tally)
+                voiced = await self._voice_within_budget(record, cue, tally, deadline)
             cues_done += 1
             await report(cues_done, len(cues))
             return voiced
 
         return list(await asyncio.gather(*(voice_one(cue) for cue in cues)))
+
+    async def _voice_within_budget(
+        self, record: VideoRecord, cue: NarrationCue, tally: TokenTally, deadline: float
+    ) -> NarrationCue:
+        """Voice one cue, but never past the stage deadline; an unvoiced cue stays silent."""
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            logger.error("cue_skipped_over_budget", video_key=record.video_key, cue_id=cue.cue_id)
+            return cue
+        try:
+            return await asyncio.wait_for(
+                self._voice_with_retries(record, cue, tally), timeout=remaining_seconds
+            )
+        except TimeoutError:
+            logger.error("cue_voicing_timed_out", video_key=record.video_key, cue_id=cue.cue_id)
+            return cue
 
     async def _voice_with_retries(
         self, record: VideoRecord, cue: NarrationCue, tally: TokenTally
@@ -292,6 +317,8 @@ class VideoPipeline:
                     attempt=attempt,
                     error=str(error),
                 )
+                if isinstance(error, GeminiError):
+                    break  # the gateway has already retried; do not multiply the waits
                 continue
             logger.info(
                 "cue_voiced",
