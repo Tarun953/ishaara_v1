@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     clip_overlap_seconds: int = 10
     analysis_concurrency: int = 3
     tts_concurrency: int = 4
+    tts_requests_per_minute: int = 0
     min_confidence: float = 0.5
     min_cue_gap_seconds: float = 6.0
     daily_video_limit: int = 10

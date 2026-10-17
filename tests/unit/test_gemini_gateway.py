@@ -365,30 +365,70 @@ async def test_a_hung_call_is_cut_off_at_its_deadline_and_retried(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import asyncio
+    import threading
+    from types import SimpleNamespace
 
     from ishaara.clients import gemini_gateway
 
+    release = threading.Event()
     started = 0
 
-    async def hang(*args: object, **kwargs: object) -> None:
+    def create(**kwargs: object) -> None:
         nonlocal started
         started += 1
-        await asyncio.Event().wait()  # never returns
+        release.wait(5)  # a real blocked thread, like a Gemini call that never answers
 
     real_sleep = asyncio.sleep
 
     async def instant_backoff(delay: float, *args: object) -> None:
         await real_sleep(0)
 
-    monkeypatch.setattr(gemini_gateway, "TTS_TIMEOUT_SECONDS", 0.02)
-    monkeypatch.setattr(gemini_gateway, "DEADLINE_MARGIN_SECONDS", 0.02)
-    monkeypatch.setattr(asyncio, "to_thread", hang)
+    monkeypatch.setattr(gemini_gateway, "TTS_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(gemini_gateway, "DEADLINE_MARGIN_SECONDS", 0.05)
     monkeypatch.setattr(asyncio, "sleep", instant_backoff)
     gateway = GoogleGeminiGateway(Settings(_env_file=None, gemini_api_key="test-key"))
+    gateway._sdk_client = SimpleNamespace(interactions=SimpleNamespace(create=create))  # type: ignore[assignment]
 
-    with pytest.raises(GeminiError) as error_info:
-        await gateway.synthesize_speech("hello", NarrationLanguage.ENGLISH)
+    try:
+        with pytest.raises(GeminiError) as error_info:
+            await gateway.synthesize_speech("hello", NarrationLanguage.ENGLISH)
+    finally:
+        release.set()
+        gateway.close()
 
     assert error_info.value.code == "gemini_error"
     assert "in time" in error_info.value.detail
     assert started == 3  # the three attempts the retry layer allows, and no more
+
+
+async def test_hung_gemini_calls_cannot_starve_the_shared_thread_pool() -> None:
+    """Regression: blocked SDK calls once left every authenticated request waiting for a thread."""
+    import asyncio
+    import threading
+    from types import SimpleNamespace
+
+    release = threading.Event()
+    running = threading.Semaphore(0)
+
+    def create(**kwargs: object) -> None:
+        running.release()
+        release.wait(10)
+
+    gateway = GoogleGeminiGateway(Settings(_env_file=None, gemini_api_key="k"), threads=2)
+    gateway._sdk_client = SimpleNamespace(interactions=SimpleNamespace(create=create))  # type: ignore[assignment]
+    stuck = [
+        asyncio.create_task(gateway.synthesize_speech("a", NarrationLanguage.ENGLISH)),
+        asyncio.create_task(gateway.synthesize_speech("b", NarrationLanguage.ENGLISH)),
+    ]
+    try:
+        for _ in range(2):  # wait until both Gemini threads are really blocked
+            assert await asyncio.to_thread(running.acquire, True, 5)
+
+        # this is what Firebase token verification does on every authenticated request
+        answer = await asyncio.wait_for(asyncio.to_thread(lambda: 42), timeout=2)
+
+        assert answer == 42
+    finally:
+        release.set()
+        await asyncio.gather(*stuck, return_exceptions=True)
+        gateway.close()

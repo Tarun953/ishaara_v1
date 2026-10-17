@@ -69,6 +69,11 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
     video_service = VideoService(
         repositories.videos, repositories.usage, metadata_client, job_runner, settings
     )
+
+    async def close_resources() -> None:
+        gateway.close()
+        await repositories.close()
+
     return AppContainer(
         video_service,
         repositories.videos,
@@ -76,5 +81,5 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
         job_runner,
         blob_storage,
         QuestionService(repositories.usage, gateway, blob_storage, settings),
-        repositories.close,
+        close_resources,
     )

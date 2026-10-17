@@ -3,7 +3,9 @@
 import asyncio
 import base64
 import contextlib
+import functools
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -22,6 +24,15 @@ from tenacity import (
     wait_exponential,
 )
 
+from ishaara.clients.gemini_errors import (
+    is_retryable,
+    is_sdk_connection_error,
+    is_sdk_error,
+    is_sdk_timeout,
+    retry_delay_hint_seconds,
+    sdk_status_code,
+)
+from ishaara.clients.rate_limiter import RateLimiter
 from ishaara.errors import GeminiError
 from ishaara.models.domain import NarrationCue, NarrationLanguage
 from ishaara.models.gemini_schemas import (
@@ -45,9 +56,13 @@ from ishaara.settings import Settings
 logger = structlog.get_logger()
 
 NARRATION_ATTEMPTS = 2
-ANALYSIS_TIMEOUT_SECONDS = 180.0
+ANALYSIS_TIMEOUT_SECONDS = 300.0
 TTS_TIMEOUT_SECONDS = 30.0
 DEADLINE_MARGIN_SECONDS = 5.0
+# Blocking SDK calls get their own threads. On a 1-CPU Cloud Run instance the default pool has 5
+# threads, shared with Firebase token verification: a few slow Gemini calls would leave every
+# authenticated request waiting for a thread.
+GEMINI_THREADS = 16
 MAX_ATTEMPTS = 3
 SPEECH_STYLE = "calm and clear"
 SPEECH_LANGUAGE_CODES = {NarrationLanguage.ENGLISH: "en-US", NarrationLanguage.HINDI: "hi-IN"}
@@ -170,10 +185,16 @@ class GeminiGateway(Protocol):
 
 
 def _is_retryable(error: BaseException) -> bool:
-    """Return True for 429 and 5xx API errors and network failures."""
-    if isinstance(error, genai_errors.APIError):
-        return error.code == 429 or error.code >= 500
-    return isinstance(error, httpx.TransportError | TimeoutError)
+    """Return True for rate limits, server errors, timeouts and network failures."""
+    return is_retryable(error)
+
+
+def _retry_wait_seconds(retry_state: RetryCallState) -> float:
+    """Wait the exponential backoff, or longer if Gemini said how long to wait."""
+    backoff: float = wait_exponential(multiplier=1, max=10)(retry_state)
+    error = retry_state.outcome.exception() if retry_state.outcome else None
+    hint = retry_delay_hint_seconds(error) if error is not None else None
+    return max(backoff, hint) if hint else backoff
 
 
 def _log_retry(retry_state: RetryCallState) -> None:
@@ -214,6 +235,20 @@ def sdk_http_options() -> genai_types.HttpOptions:
     return genai_types.HttpOptions(retry_options=genai_types.HttpRetryOptions(attempts=0))
 
 
+def _map_sdk_error(error: Exception) -> GeminiError | None:
+    """Turn an Interactions SDK error into a ``GeminiError``; ``None`` if it is not one."""
+    status = sdk_status_code(error)
+    if status is not None:
+        return GeminiError("gemini_error", f"Gemini request failed (status {status}).")
+    if is_sdk_timeout(error):
+        return GeminiError("gemini_error", "Gemini did not respond in time.")
+    if is_sdk_connection_error(error):
+        return GeminiError("gemini_error", "Could not reach Gemini.")
+    if is_sdk_error(error):
+        return GeminiError("gemini_error", "Gemini request failed.")
+    return None
+
+
 @contextlib.contextmanager
 def _gemini_errors() -> Iterator[None]:
     """Translate SDK, network and parsing failures into ``GeminiError``."""
@@ -231,6 +266,11 @@ def _gemini_errors() -> Iterator[None]:
         raise GeminiError(
             "gemini_invalid_response", "Gemini returned a response in an unexpected format."
         ) from error
+    except Exception as error:
+        mapped = _map_sdk_error(error)
+        if mapped is None:
+            raise
+        raise mapped from error
 
 
 class GoogleGeminiGateway:
@@ -240,10 +280,12 @@ class GoogleGeminiGateway:
         settings: Application settings providing the API key and model ids.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, threads: int = GEMINI_THREADS) -> None:
         """Store settings; the SDK client is created lazily."""
+        self._executor = ThreadPoolExecutor(max_workers=threads, thread_name_prefix="gemini-sdk")
         self._settings = settings
         self._sdk_client: genai.Client | None = None
+        self._speech_limiter = RateLimiter(settings.tts_requests_per_minute)
 
     @property
     def _client(self) -> genai.Client:
@@ -253,6 +295,10 @@ class GoogleGeminiGateway:
                 api_key=self._settings.gemini_api_key, http_options=sdk_http_options()
             )
         return self._sdk_client
+
+    def close(self) -> None:
+        """Release the SDK threads without waiting for calls that may be stuck."""
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     async def analyze_clip(self, youtube_video_id: str, window: ClipWindow) -> AnalyzeClipResult:
         """Pass 1: analyze one window of a public YouTube video.
@@ -339,7 +385,7 @@ class GoogleGeminiGateway:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(MAX_ATTEMPTS),
-        wait=wait_exponential(multiplier=1, max=10),
+        wait=_retry_wait_seconds,
         before_sleep=_log_retry,
         reraise=True,
     )
@@ -350,11 +396,16 @@ class GoogleGeminiGateway:
         response_format: dict[str, Any],
         timeout: float,
         generation_config: dict[str, Any] | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> interactions.Interaction:
         """Make one interaction (blocking SDK call in a thread) with a hard deadline per attempt.
 
-        429, 5xx, network failures and missed deadlines are retried by the decorator.
+        429, 5xx, network failures and missed deadlines are retried by the decorator, waiting
+        as long as Gemini asks. Every attempt, retries included, takes a slot from the optional
+        ``rate_limiter``.
         """
+        if rate_limiter is not None:
+            await rate_limiter.acquire()
         request: dict[str, Any] = {
             "model": model,
             "input": input_items,
@@ -363,8 +414,9 @@ class GoogleGeminiGateway:
         }
         if generation_config:
             request["generation_config"] = generation_config
+        call = functools.partial(self._client.interactions.create, **request)
         interaction = await asyncio.wait_for(
-            asyncio.to_thread(self._client.interactions.create, **request),
+            asyncio.get_running_loop().run_in_executor(self._executor, call),
             timeout=timeout + DEADLINE_MARGIN_SECONDS,
         )
         if not isinstance(interaction, interactions.Interaction):
@@ -444,6 +496,7 @@ class GoogleGeminiGateway:
                     ]
                 },
                 timeout=TTS_TIMEOUT_SECONDS,
+                rate_limiter=self._speech_limiter,
             )
         audio = interaction.output_audio
         if audio is None or not audio.data:
