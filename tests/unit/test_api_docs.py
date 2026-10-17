@@ -34,7 +34,12 @@ def test_every_route_is_documented_in_api_md() -> None:
 
 def test_every_route_is_in_the_postman_collection() -> None:
     collection = json.loads((DOCS / "postman" / "ishaara.postman_collection.json").read_text())
-    requests = [item["request"] for folder in collection["item"] for item in folder["item"]]
+    requests = [
+        item["request"]
+        for folder in collection["item"]
+        for item in folder["item"]
+        if isinstance(item["request"]["url"], dict)  # string URLs are absolute (e.g. cue audio)
+    ]
     in_collection = {
         (
             request["method"],
