@@ -4,7 +4,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from google.api_core.exceptions import ServiceUnavailable, TooManyRequests
+from google.api_core.exceptions import NotFound, ServiceUnavailable, TooManyRequests
 
 from ishaara.clients.blob_storage import validate_blob_path
 from ishaara.clients.blob_storage_factory import build_blob_storage
@@ -67,6 +67,17 @@ async def test_local_upload_overwrites_and_rejects_traversal(tmp_path: Path) -> 
         await storage.upload_public("../escape.wav", b"x", "audio/wav", CACHE)
 
 
+async def test_local_private_round_trip_and_missing_file(tmp_path: Path) -> None:
+    storage = LocalBlobStorage(tmp_path, "http://x")
+    await storage.upload_private("transcripts/k.json", b'{"segments": []}', "application/json")
+
+    assert await storage.download_private("transcripts/k.json") == b'{"segments": []}'
+    with pytest.raises(StorageError):
+        await storage.download_private("transcripts/missing.json")
+    with pytest.raises(ValueError):
+        await storage.download_private("../private/transcripts/k.json")
+
+
 # ---- GCS ----
 
 
@@ -76,6 +87,15 @@ class _FakeBlob:
     ):
         self._uploads, self._bucket, self._path, self._failures = uploads, bucket, path, failures
         self.cache_control: str | None = None
+
+    def download_as_bytes(self, timeout: float) -> bytes:
+        if self._failures:
+            raise self._failures.pop(0)
+        for upload in self._uploads:
+            if (upload["bucket"], upload["path"]) == (self._bucket, self._path):
+                data: bytes = upload["data"]
+                return data
+        raise NotFound("no such object")
 
     def upload_from_string(self, data: bytes, content_type: str, timeout: float) -> None:
         if self._failures:
@@ -142,6 +162,25 @@ async def test_gcs_gives_up_after_three_attempts_with_storage_error() -> None:
 
     with pytest.raises(StorageError):
         await storage.upload_public("x/y.wav", b"1", "audio/wav", CACHE)
+
+
+async def test_gcs_download_reads_the_transcript_bucket_and_maps_not_found() -> None:
+    client = _FakeGcsClient()
+    storage = GcsBlobStorage(client, "audio-bucket", "transcript-bucket")
+    await storage.upload_private("transcripts/k.json", b"[1]", "application/json")
+
+    assert await storage.download_private("transcripts/k.json") == b"[1]"
+    with pytest.raises(StorageError):
+        await storage.download_private("transcripts/missing.json")
+
+
+async def test_gcs_download_retries_503_then_succeeds() -> None:
+    client = _FakeGcsClient()
+    storage = GcsBlobStorage(client, "audio-bucket", "transcript-bucket")
+    await storage.upload_private("t/k.json", b"ok", "application/json")
+    client.failures.append(ServiceUnavailable("down"))
+
+    assert await storage.download_private("t/k.json") == b"ok"
 
 
 # ---- Supabase ----
@@ -232,3 +271,33 @@ async def test_factory_builds_local_by_default_and_checks_required_settings(tmp_
 def test_production_refuses_local_storage() -> None:
     with pytest.raises(ValueError, match="STORAGE_BACKEND=local"):
         Settings(_env_file=None, environment="production", database_backend="supabase")
+
+
+@respx.mock
+async def test_supabase_download_reads_the_private_bucket_with_the_service_key() -> None:
+    route = respx.get(f"{BASE}/storage/v1/object/transcripts/transcripts/k.json").mock(
+        return_value=httpx.Response(200, content=b'{"segments": []}')
+    )
+    async with httpx.AsyncClient() as client:
+        data = await _supabase(client).download_private("transcripts/k.json")
+
+    assert data == b'{"segments": []}'
+    assert route.calls.last.request.headers["authorization"] == "Bearer service-key"
+    assert route.calls.last.request.headers["apikey"] == "service-key"
+
+
+@respx.mock
+async def test_supabase_download_retries_503_and_maps_a_missing_file() -> None:
+    url = f"{BASE}/storage/v1/object/transcripts/transcripts/k.json"
+    flaky = respx.get(url).mock(
+        side_effect=[httpx.Response(503), httpx.Response(200, content=b"ok")]
+    )
+    async with httpx.AsyncClient() as client:
+        assert await _supabase(client).download_private("transcripts/k.json") == b"ok"
+    assert flaky.call_count == 2
+
+    respx.reset()
+    respx.get(url).mock(return_value=httpx.Response(400, json={"error": "not_found"}))
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(StorageError):
+            await _supabase(client).download_private("transcripts/k.json")

@@ -61,6 +61,14 @@ class SupabaseBlobStorage:
         await self._upload(self._transcript_bucket, path, data, content_type, None)
         return path
 
+    async def download_private(self, path: str) -> bytes:
+        """Download a file from the transcript bucket."""
+        validate_blob_path(path)
+        try:
+            return await self._get_with_retries(self._transcript_bucket, path)
+        except (httpx.HTTPStatusError, httpx.TransportError) as error:
+            raise StorageError("Could not read the file from Supabase Storage.") from error
+
     async def _upload(
         self, bucket: str, path: str, data: bytes, content_type: str, cache_control: str | None
     ) -> None:
@@ -96,3 +104,22 @@ class SupabaseBlobStorage:
             timeout=UPLOAD_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(MAX_ATTEMPTS),
+        wait=wait_exponential(multiplier=0.5, max=4),
+        reraise=True,
+    )
+    async def _get_with_retries(self, bucket: str, path: str) -> bytes:
+        """GET the object with the service key; 429/5xx are retried."""
+        response = await self._http_client.get(
+            f"{self._base_url}/storage/v1/object/{bucket}/{quote(path)}",
+            headers={
+                "Authorization": f"Bearer {self._service_key}",
+                "apikey": self._service_key,
+            },
+            timeout=UPLOAD_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        return response.content

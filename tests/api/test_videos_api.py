@@ -1,3 +1,4 @@
+import asyncio
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -8,13 +9,14 @@ from fastapi.testclient import TestClient
 from ishaara.clients.memory_repository import InMemoryUsageRepository, InMemoryVideoRepository
 from ishaara.container import AppContainer
 from ishaara.main import create_app
-from ishaara.models.domain import NarrationLanguage, ReferentKind
-from ishaara.models.gemini_schemas import ChunkAnalysis, VisualEvent
+from ishaara.models.domain import NarrationLanguage, ReferentKind, VideoStatus
+from ishaara.models.gemini_schemas import ChunkAnalysis, TranscriptSegmentRaw, VisualEvent
 from ishaara.pipeline.orchestrator import VideoPipeline
 from ishaara.services.job_runner import JobRunner
 from ishaara.services.video_service import VideoService, build_video_key
 from ishaara.settings import Settings, get_settings
 from tests.conftest import FakeBlobStorage, FakeGeminiGateway, FakeMetadataSource
+from tests.contract.conftest import make_record
 
 URL = "https://youtu.be/dQw4w9WgXcQ"
 VIDEO_KEY = build_video_key(
@@ -25,9 +27,14 @@ BODY = {"youtube_url": URL, "narration_language": "en"}
 
 def _container(settings: Settings, privacy_status: str = "public") -> AppContainer:
     videos, usage = InMemoryVideoRepository(), InMemoryUsageRepository()
+    storage = FakeBlobStorage()
     metadata = FakeMetadataSource(privacy_status=privacy_status)
     analysis = ChunkAnalysis(
-        transcript_segments=[],
+        transcript_segments=[
+            TranscriptSegmentRaw(
+                start_timestamp="00:00", end_timestamp="00:04", text="Hello class."
+            )
+        ],
         visual_events=[
             VisualEvent(
                 timestamp="00:10",
@@ -38,12 +45,10 @@ def _container(settings: Settings, privacy_status: str = "public") -> AppContain
             )
         ],
     )
-    pipeline = VideoPipeline(
-        videos, metadata, FakeGeminiGateway({0: analysis}), FakeBlobStorage(), settings
-    )
+    pipeline = VideoPipeline(videos, metadata, FakeGeminiGateway({0: analysis}), storage, settings)
     runner = JobRunner(videos, pipeline.run)
     return AppContainer(
-        VideoService(videos, usage, metadata, runner, settings), videos, usage, runner
+        VideoService(videos, usage, metadata, runner, settings), videos, usage, runner, storage
     )
 
 
@@ -173,3 +178,112 @@ def test_local_media_files_are_served_under_media(
         assert response.content == b"RIFFdata"
     finally:
         get_settings.cache_clear()
+
+
+# ---------------- cues, WebVTT and notes (M5) ----------------
+
+RESULT_PATHS = ["cues", "cues.vtt", "notes"]
+
+
+def _ready_video(client: TestClient) -> str:
+    assert client.post("/v1/videos", json=BODY).status_code == 202
+    assert _wait_for_final_status(client, VIDEO_KEY)["status"] == "ready"
+    return VIDEO_KEY
+
+
+@pytest.mark.parametrize("suffix", RESULT_PATHS)
+def test_result_routes_require_a_token(suffix: str) -> None:
+    with _client(Settings(_env_file=None)) as unauthenticated:
+        response = unauthenticated.get(f"/v1/videos/{VIDEO_KEY}/{suffix}")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("suffix", RESULT_PATHS)
+def test_result_routes_return_404_for_an_unknown_video(client: TestClient, suffix: str) -> None:
+    response = client.get(f"/v1/videos/nope_en_v2/{suffix}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "video_not_found"
+
+
+def test_result_routes_return_409_while_the_video_is_not_ready() -> None:
+    settings = Settings(_env_file=None, auth_bypass_uid="user-1")
+    container = _container(settings)
+    app = create_app(container)
+    app.dependency_overrides[get_settings] = lambda: settings
+    states = {
+        "queued_en_v2": (VideoStatus.QUEUED, "queued"),
+        "working_en_v2": (VideoStatus.PROCESSING, "still being processed"),
+        "broken_en_v2": (VideoStatus.FAILED, "gemini_error"),
+    }
+    with TestClient(app) as test_client:
+        for key, (status, _) in states.items():
+            record = make_record(key, status=status)
+            if status == VideoStatus.FAILED:
+                record = record.failed("gemini_error", "Gemini request failed", record.created_at)
+            asyncio.run(container.videos.create_if_absent(record))
+        for key, (_, fragment) in states.items():
+            for suffix in RESULT_PATHS:
+                response = test_client.get(f"/v1/videos/{key}/{suffix}")
+                assert response.status_code == 409, (key, suffix)
+                assert response.json()["code"] == "video_not_ready"
+                assert fragment in response.json()["detail"]
+
+
+def test_cues_endpoint_returns_narrated_cues(client: TestClient) -> None:
+    key = _ready_video(client)
+
+    response = client.get(f"/v1/videos/{key}/cues")
+
+    assert response.status_code == 200
+    cues = response.json()["cues"]
+    assert len(cues) == 1
+    assert cues[0]["cue_id"] == "cue-0001"
+    assert cues[0]["narration_text"].startswith("On the board:")
+    assert cues[0]["audio_url"].startswith("https://audio.test/audio/")
+    assert cues[0]["audio_duration_seconds"] == 1.0
+
+
+def test_vtt_endpoint_returns_a_description_track(client: TestClient) -> None:
+    key = _ready_video(client)
+
+    response = client.get(f"/v1/videos/{key}/cues.vtt")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/vtt")
+    assert response.text.startswith("WEBVTT\nKind: descriptions\nLanguage: en\n")
+    assert "00:00:10.000 --> 00:00:11.000" in response.text
+    assert "On the board: A slide title." in response.text
+
+
+def test_notes_default_to_markdown_with_the_transcript_inlined(client: TestClient) -> None:
+    key = _ready_video(client)
+
+    response = client.get(f"/v1/videos/{key}/notes")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert response.text.startswith("# Lecture")
+    assert "## 00:00 – 05:00" in response.text
+    assert "Hello class." in response.text
+    assert "**[Board, 00:10]** A slide title." in response.text
+
+
+def test_notes_can_be_requested_as_html(client: TestClient) -> None:
+    key = _ready_video(client)
+
+    response = client.get(f"/v1/videos/{key}/notes", params={"format": "html"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<main>" in response.text and "<h1>Lecture</h1>" in response.text
+
+
+def test_notes_reject_an_unknown_format(client: TestClient) -> None:
+    key = _ready_video(client)
+
+    response = client.get(f"/v1/videos/{key}/notes", params={"format": "pdf"})
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "invalid_request"

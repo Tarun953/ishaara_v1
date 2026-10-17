@@ -8,10 +8,12 @@ import firebase_admin
 from fastapi import Depends, Request
 from firebase_admin import auth
 
+from ishaara.clients.blob_storage import BlobStorage
 from ishaara.clients.repositories import VideoRepository
 from ishaara.container import AppContainer
-from ishaara.errors import InvalidTokenError
+from ishaara.errors import InvalidTokenError, VideoNotFoundError, VideoNotReadyError
 from ishaara.models.api_models import AuthenticatedUser
+from ishaara.models.domain import VideoRecord, VideoStatus
 from ishaara.services.video_service import VideoService
 from ishaara.settings import Settings, get_settings
 
@@ -78,3 +80,37 @@ def get_video_repository(
 ) -> VideoRepository:
     """Return the video repository."""
     return container.videos
+
+
+def get_blob_storage(container: Annotated[AppContainer, Depends(get_container)]) -> BlobStorage:
+    """Return the blob storage."""
+    return container.blob_storage
+
+
+async def get_ready_video(
+    video_key: str, videos: Annotated[VideoRepository, Depends(get_video_repository)]
+) -> VideoRecord:
+    """Load a video whose processing has finished.
+
+    Args:
+        video_key: The video's key from the URL path.
+        videos: Video storage.
+
+    Returns:
+        The stored record, with status ``ready``.
+
+    Raises:
+        VideoNotFoundError: If no video has that key.
+        VideoNotReadyError: If the video is queued, processing or failed.
+    """
+    record = await videos.get(video_key)
+    if record is None:
+        raise VideoNotFoundError(f"No video with key {video_key}.")
+    if record.status == VideoStatus.READY:
+        return record
+    if record.status == VideoStatus.FAILED:
+        raise VideoNotReadyError(f"Processing failed ({record.error_code}): {record.error_message}")
+    if record.status == VideoStatus.QUEUED:
+        raise VideoNotReadyError("This video is queued and has not started processing yet.")
+    where = f" (stage {record.stage.value}, {record.progress_percent}%)" if record.stage else ""
+    raise VideoNotReadyError(f"This video is still being processed{where}. Try again shortly.")

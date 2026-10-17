@@ -177,3 +177,11 @@ class StorageError(IshaaraError):
     def __init__(self, detail: str) -> None:
         """Build a 502 ``storage_error`` error."""
         super().__init__("storage_error", 502, "Storage failed", detail)
+
+
+class VideoNotReadyError(IshaaraError):
+    """Raised when a result is requested before the video has finished processing."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 409 ``video_not_ready`` error."""
+        super().__init__("video_not_ready", 409, "Video is not ready", detail)

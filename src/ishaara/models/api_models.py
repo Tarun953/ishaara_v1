@@ -4,7 +4,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from ishaara.models.domain import NarrationLanguage, PipelineStage, VideoRecord, VideoStatus
+from ishaara.models.domain import (
+    NarrationCue,
+    NarrationLanguage,
+    PipelineStage,
+    VideoRecord,
+    VideoStatus,
+)
 
 
 class AuthenticatedUser(BaseModel):
@@ -107,3 +113,9 @@ class UserVideosResponse(BaseModel):
     """Body of ``GET /v1/me/videos``."""
 
     videos: list[VideoSummary]
+
+
+class CuesResponse(BaseModel):
+    """Body of ``GET /v1/videos/{video_key}/cues``."""
+
+    cues: list[NarrationCue]

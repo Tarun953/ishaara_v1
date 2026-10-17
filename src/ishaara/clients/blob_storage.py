@@ -27,6 +27,14 @@ class BlobStorage(Protocol):
         """
         ...
 
+    async def download_private(self, path: str) -> bytes:
+        """Read back a file stored with ``upload_private``.
+
+        Raises:
+            StorageError: If the file does not exist or could not be read.
+        """
+        ...
+
 
 def validate_blob_path(path: str) -> str:
     """Reject paths that could escape a storage root.

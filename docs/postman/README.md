@@ -21,5 +21,6 @@ Notes:
 - The *No token* request expects a 401, so it fails when the server uses `AUTH_BYPASS_UID`.
 - Submitting a new video calls Gemini and counts towards the daily limit (10). A video that is
   already `ready` returns `200` instantly and costs nothing.
-- Endpoints that are planned but not built (cues, WebVTT, notes, questions) are listed in
-  `docs/API.md` and are not in the collection yet.
+- The cues, WebVTT and notes requests return `409 video_not_ready` until the video is `ready`, so
+  run them after polling finishes.
+- The planned question endpoint (M6) is listed in `docs/API.md` and is not in the collection yet.

@@ -59,6 +59,14 @@ class GcsBlobStorage:
         await self._upload(self._transcript_bucket, path, data, content_type, None)
         return path
 
+    async def download_private(self, path: str) -> bytes:
+        """Download a file from the transcript bucket."""
+        validate_blob_path(path)
+        try:
+            return await self._download_with_retries(self._transcript_bucket, path)
+        except GoogleAPICallError as error:
+            raise StorageError("Could not read the file from Cloud Storage.") from error
+
     async def _upload(
         self, bucket_name: str, path: str, data: bytes, content_type: str, cache_control: str | None
     ) -> None:
@@ -87,3 +95,19 @@ class GcsBlobStorage:
             blob.upload_from_string(data, content_type=content_type, timeout=UPLOAD_TIMEOUT_SECONDS)
 
         await asyncio.to_thread(upload)
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(MAX_ATTEMPTS),
+        wait=wait_exponential(multiplier=0.5, max=4),
+        reraise=True,
+    )
+    async def _download_with_retries(self, bucket_name: str, path: str) -> bytes:
+        """Download once in a worker thread; 429/5xx are retried by the decorator."""
+
+        def download() -> bytes:
+            blob = self._client.bucket(bucket_name).blob(path)
+            data: bytes = blob.download_as_bytes(timeout=UPLOAD_TIMEOUT_SECONDS)
+            return data
+
+        return await asyncio.to_thread(download)

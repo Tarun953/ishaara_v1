@@ -44,6 +44,14 @@ class LocalBlobStorage:
         await self._write(self._root / PRIVATE_DIRECTORY / validate_blob_path(path), data)
         return path
 
+    async def download_private(self, path: str) -> bytes:
+        """Read a private file."""
+        source = self._root / PRIVATE_DIRECTORY / validate_blob_path(path)
+        try:
+            return await asyncio.to_thread(source.read_bytes)
+        except OSError as error:
+            raise StorageError("Could not read the file from local storage.") from error
+
     async def _write(self, destination: Path, data: bytes) -> None:
         """Write ``data`` to ``destination`` without blocking the event loop."""
 

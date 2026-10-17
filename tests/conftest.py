@@ -101,6 +101,11 @@ class FakeBlobStorage:
         self.private[path] = data
         return path
 
+    async def download_private(self, path: str) -> bytes:
+        if path not in self.private:
+            raise StorageError("no such file")
+        return self.private[path]
+
 
 class FakeMetadataSource:
     """Returns fixed YouTube metadata; never touches the network."""
