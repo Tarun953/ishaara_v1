@@ -1,0 +1,284 @@
+{
+  "transcript_segments": [
+    {
+      "start_timestamp": "00:05",
+      "end_timestamp": "00:07",
+      "text": "Now what is a circular track?"
+    },
+    {
+      "start_timestamp": "00:07",
+      "end_timestamp": "00:10",
+      "text": "Circular track is basically,"
+    },
+    {
+      "start_timestamp": "00:10",
+      "end_timestamp": "00:14",
+      "text": "instead of running in a straight line, we were doing races and head starts till now, know?"
+    },
+    {
+      "start_timestamp": "00:14",
+      "end_timestamp": "00:17",
+      "text": "Instead of running in a straight line, suppose people are running in circles,"
+    },
+    {
+      "start_timestamp": "00:17",
+      "end_timestamp": "00:20",
+      "text": "which is what is the case in most like stadiums."
+    },
+    {
+      "start_timestamp": "00:20",
+      "end_timestamp": "00:22",
+      "text": "You don't have a single straight track, you have a circular track."
+    },
+    {
+      "start_timestamp": "00:22",
+      "end_timestamp": "00:29",
+      "text": "So in circular track, the thing that happens is that A and B are running either in the same direction or in opposite directions,"
+    },
+    {
+      "start_timestamp": "00:29",
+      "end_timestamp": "00:35",
+      "text": "and they will meet, if I am doing laps around a circle, they will meet at different points on that circle."
+    },
+    {
+      "start_timestamp": "00:36",
+      "end_timestamp": "00:43",
+      "text": "So circular tracks helps you understand where they will meet, how much time will they take to meet, and how many different points that they will meet at."
+    },
+    {
+      "start_timestamp": "00:43",
+      "end_timestamp": "00:48",
+      "text": "Suppose the speed of A is S of A, and the speed of B is S of B, okay?"
+    },
+    {
+      "start_timestamp": "00:48",
+      "end_timestamp": "00:55",
+      "text": "You are suppose to find out if A and B are running laps around this particular circle, where would they meet?"
+    },
+    {
+      "start_timestamp": "00:55",
+      "end_timestamp": "01:00",
+      "text": "Always remember one of the meeting points that they will have will always be the starting point."
+    },
+    {
+      "start_timestamp": "01:00",
+      "end_timestamp": "01:04",
+      "text": "If they start from the same point, right? That will always be one of the meeting points."
+    },
+    {
+      "start_timestamp": "01:04",
+      "end_timestamp": "01:09",
+      "text": "So one way you can be asked is how much time does it take for them to meet at the starting point again?"
+    },
+    {
+      "start_timestamp": "01:09",
+      "end_timestamp": "01:14",
+      "text": "So if I have to figure out, okay, how much time does it take for them to meet at the starting point again, how do I figure out?"
+    },
+    {
+      "start_timestamp": "01:14",
+      "end_timestamp": "01:17",
+      "text": "Suppose this is a 800 meter track,"
+    },
+    {
+      "start_timestamp": "01:18",
+      "end_timestamp": "01:21",
+      "text": "and suppose A runs at, say, 4 m/s,"
+    },
+    {
+      "start_timestamp": "01:22",
+      "end_timestamp": "01:24",
+      "text": "and this guy runs at, say, 2 m/s."
+    },
+    {
+      "start_timestamp": "01:24",
+      "end_timestamp": "01:29",
+      "text": "So for running this entire track, how much time would A take? A would take say,"
+    },
+    {
+      "start_timestamp": "01:29",
+      "end_timestamp": "01:34",
+      "text": "200 seconds, and B would take, say, 400 seconds."
+    },
+    {
+      "start_timestamp": "01:34",
+      "end_timestamp": "01:38",
+      "text": "So if I have to start say that okay, when do they meet at the starting point again?"
+    },
+    {
+      "start_timestamp": "01:38",
+      "end_timestamp": "01:43",
+      "text": "This is the time taken by A to complete one lap, this is the time taken by B to complete another lap."
+    },
+    {
+      "start_timestamp": "01:44",
+      "end_timestamp": "01:49",
+      "text": "To find out the time at which all, like there are say C, D, any number of people."
+    },
+    {
+      "start_timestamp": "01:49",
+      "end_timestamp": "01:54",
+      "text": "First thing that we have to do is find the time for each one of them to complete one lap."
+    },
+    {
+      "start_timestamp": "01:54",
+      "end_timestamp": "02:06",
+      "text": "The time taken for all of them to meet at the starting point will be the lowest common multiple of the time taken by each one of them to complete a lap."
+    },
+    {
+      "start_timestamp": "02:06",
+      "end_timestamp": "02:14",
+      "text": "So in this case there are only two runners, so it will be the LCM of 200 seconds and 400 seconds, which is basically 400 seconds."
+    },
+    {
+      "start_timestamp": "02:14",
+      "end_timestamp": "02:17",
+      "text": "So they will meet again at the starting line at 400 seconds, okay?"
+    },
+    {
+      "start_timestamp": "02:18",
+      "end_timestamp": "02:20",
+      "text": "This is the basic idea."
+    },
+    {
+      "start_timestamp": "02:21",
+      "end_timestamp": "02:29",
+      "text": "This is basically how much time will they take to meet at the starting point again, that will be the LCM of the time it takes for each one of them to complete a lap."
+    },
+    {
+      "start_timestamp": "02:29",
+      "end_timestamp": "02:32",
+      "text": "More commonly, that is not what is asked."
+    },
+    {
+      "start_timestamp": "02:32",
+      "end_timestamp": "02:39",
+      "text": "More commonly what you are asked is, how many different points do they meet, what is the first point of meeting, or second point of meeting, or third point of meeting?"
+    },
+    {
+      "start_timestamp": "02:39",
+      "end_timestamp": "02:43",
+      "text": "So there is a formula over here which is based on relative velocity."
+    },
+    {
+      "start_timestamp": "02:43",
+      "end_timestamp": "02:47",
+      "text": "So suppose that this is the same this,"
+    },
+    {
+      "start_timestamp": "02:47",
+      "end_timestamp": "02:51",
+      "text": "and suppose speed of A say 5 m/s,"
+    },
+    {
+      "start_timestamp": "02:51",
+      "end_timestamp": "02:55",
+      "text": "speed of B say 3 m/s, okay?"
+    },
+    {
+      "start_timestamp": "02:55",
+      "end_timestamp": "03:00",
+      "text": "If you are asked, okay, if they are running in the same direction, both are running clock..."
+    }
+  ],
+  "visual_events": [
+    {
+      "timestamp": "00:05",
+      "referent_kind": "text",
+      "content_description": "Slide title reading 'Circular Tracks' with bullet points: '1. Meeting at the starting point' and '2. Number of distinct meeting points'.",
+      "words_spoken_nearby": "Now what is a circular track?",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "00:08",
+      "referent_kind": "diagram",
+      "content_description": "Teacher draws a white circle on the right side of the screen representing a circular track.",
+      "words_spoken_nearby": "Circular track is basically, instead of running in a straight line",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "00:23",
+      "referent_kind": "diagram",
+      "content_description": "Teacher marks a small tick mark at the bottom of the circle representing the starting point, and writes 'A' and 'B' below it with rightward arrows indicating direction of running.",
+      "words_spoken_nearby": "So in circular track, the thing that happens is that A and B are running either in the same direction",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "00:44",
+      "referent_kind": "equation",
+      "content_description": "On the top right of the board, teacher writes 'S_A' and below it 'S_B'.",
+      "words_spoken_nearby": "Suppose the speed of A is S of A, and the speed of B is S of B, okay?",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "01:16",
+      "referent_kind": "text",
+      "content_description": "Teacher writes '800m' inside the circle.",
+      "words_spoken_nearby": "Suppose this is a 800 meter track,",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "01:21",
+      "referent_kind": "equation",
+      "content_description": "Next to 'S_A', teacher writes '4 m/s'. Next to 'S_B', teacher writes '2 m/s'.",
+      "words_spoken_nearby": "and suppose A runs at, say, 4 m/s, and this guy runs at, say, 2 m/s.",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "01:29",
+      "referent_kind": "equation",
+      "content_description": "To the left of the circle, teacher writes '200s' and below it '400s'.",
+      "words_spoken_nearby": "A would take say, 200 seconds, and B would take, say, 400 seconds.",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "01:39",
+      "referent_kind": "equation",
+      "content_description": "Teacher adds labels in front: 'T_A 200s' and 'T_B 400s'.",
+      "words_spoken_nearby": "This is the time taken by A to complete one lap, this is the time taken by B to complete another lap.",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "01:58",
+      "referent_kind": "equation",
+      "content_description": "Teacher writes the formula: 'LCM(T_A, T_B, T_C, ...)' under the first bullet point.",
+      "words_spoken_nearby": "The time taken for all of them to meet at the starting point will be the lowest common multiple of the time taken by each one of them to complete a lap.",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "02:08",
+      "referent_kind": "equation",
+      "content_description": "Teacher writes: 'LCM(200s, 400s) = 400s'.",
+      "words_spoken_nearby": "So in this case there are only two runners, so it will be the LCM of 200 seconds and 400 seconds, which is basically 400 seconds.",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "02:32",
+      "referent_kind": "diagram",
+      "content_description": "Teacher clears all hand-drawn writing from the screen, returning to the original slide text with bullet points.",
+      "words_spoken_nearby": "More commonly what you are asked is, how many different points do they meet,",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "02:43",
+      "referent_kind": "diagram",
+      "content_description": "Teacher draws a new circle on the right side of the screen.",
+      "words_spoken_nearby": "So suppose that this is the same this,",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "02:46",
+      "referent_kind": "diagram",
+      "content_description": "Teacher marks the starting tick mark at the bottom of the circle and writes 'S_A 5 m/s' and 'S_B 3 m/s' near the bottom right of the circle.",
+      "words_spoken_nearby": "and suppose speed of A say 5 m/s, speed of B say 3 m/s, okay?",
+      "confidence": 0.9
+    },
+    {
+      "timestamp": "02:58",
+      "referent_kind": "diagram",
+      "content_description": "Teacher draws a rightward arrow under the starting point to denote direction.",
+      "words_spoken_nearby": "If you are asked, okay, if they are running in the same direction, both are running clock...",
+      "confidence": 0.95
+    }
+  ]
+}

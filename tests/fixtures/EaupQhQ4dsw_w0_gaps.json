@@ -1,0 +1,52 @@
+{
+  "judgements": [
+    {
+      "event_index": 0,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.98
+    },
+    {
+      "event_index": 1,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 2,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.98
+    },
+    {
+      "event_index": 3,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.98
+    },
+    {
+      "event_index": 4,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 5,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.98
+    },
+    {
+      "event_index": 6,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.98
+    },
+    {
+      "event_index": 7,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    }
+  ]
+}

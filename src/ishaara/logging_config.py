@@ -2,7 +2,7 @@
 
 import logging
 import sys
-from typing import Any
+from typing import Any, TextIO
 
 import structlog
 
@@ -15,14 +15,16 @@ def _add_severity(
     return event_dict
 
 
-def configure_logging(log_level: str = "INFO") -> None:
+def configure_logging(log_level: str = "INFO", stream: TextIO | None = None) -> None:
     """Configure structlog to write key-value JSON events to stdout.
 
     Args:
         log_level: Minimum level name such as ``"INFO"`` or ``"DEBUG"``.
+        stream: Where events are written; defaults to stdout (the CLI uses stderr).
     """
+    output_stream = stream or sys.stdout
     level = logging.getLevelNamesMapping().get(log_level.upper(), logging.INFO)
-    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level)
+    logging.basicConfig(format="%(message)s", stream=output_stream, level=level)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -33,6 +35,6 @@ def configure_logging(log_level: str = "INFO") -> None:
             structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(level),
-        logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
+        logger_factory=structlog.PrintLoggerFactory(file=output_stream),
         cache_logger_on_first_use=True,
     )
