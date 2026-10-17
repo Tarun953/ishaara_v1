@@ -153,6 +153,7 @@ Secret Manager. On start the app logs which environment, database and storage it
 | `CLIP_OVERLAP_SECONDS` | `10` | Overlap between windows |
 | `ANALYSIS_CONCURRENCY` | `3` | Windows analysed in parallel per video |
 | `TTS_CONCURRENCY` | `4` | Speech calls in parallel per video |
+| `TTS_REQUESTS_PER_MINUTE` | `0` | Cap on speech requests per minute for the whole process; 0 = unlimited. Gemini's free tier allows 3, so production sets 3 |
 | `MIN_CONFIDENCE` | `0.5` | Events below this confidence are dropped |
 | `MIN_CUE_GAP_SECONDS` | `6` | Closer events merge into one cue |
 | `DAILY_VIDEO_LIMIT` | `10` | New videos per user per day (UTC) |
@@ -347,9 +348,12 @@ Dockerfile
 
 ## Known limitations and roadmap
 
-- **Speech can stall.** Gemini's text-to-speech sometimes stops responding or rate-limits (seen with the
-  free-tier key). Videos then finish with text-only cues, and questions return the written answer with
-  `answer_audio_url: null` after at most 25 seconds. A project-billed key may behave better; untested.
+- **Speech is rate-limited on the free tier.** The text-to-speech model allows **3 requests per minute**
+  on a free-tier key (Gemini says so in its 429 response), so a video with many cues takes minutes to
+  voice. The app throttles itself with `TTS_REQUESTS_PER_MINUTE` and honours Gemini's "retry in N
+  seconds"; a cue that still fails stays silent (text-only), and a question whose audio is not ready
+  within 25 seconds returns the written answer with `answer_audio_url: null`. A billed key has higher
+  limits (not measured).
 - **Cues vary between runs** of the same video: the same lecture produced 7 cues once and 5 another time,
   because Gemini's description of a slide can differ. In a small experiment pass 2 (judging) was stable and pass 1 (what Gemini sees and writes down) was the variable part; more runs are needed to be sure.
 - **Board notes can appear up to about 30 seconds late** in the notes' reading order.
