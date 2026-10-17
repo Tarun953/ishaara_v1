@@ -52,3 +52,59 @@ async def problem_json_handler(request: Request, error: Exception) -> JSONRespon
             "code": error.code,
         },
     )
+
+
+class InvalidYouTubeUrlError(IshaaraError):
+    """Raised when a string is not a recognizable YouTube video URL or id."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 400 ``invalid_youtube_url`` error."""
+        super().__init__("invalid_youtube_url", 400, "Invalid YouTube URL", detail)
+
+
+class VideoNotPublicError(IshaaraError):
+    """Raised when a video is private or unlisted."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 422 ``video_not_public`` error."""
+        super().__init__("video_not_public", 422, "Video is not public", detail)
+
+
+class VideoNotEmbeddableError(IshaaraError):
+    """Raised when the video owner disabled embedding."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 422 ``video_not_embeddable`` error."""
+        super().__init__("video_not_embeddable", 422, "Video cannot be embedded", detail)
+
+
+class VideoIsLiveError(IshaaraError):
+    """Raised for live or upcoming broadcasts."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 422 ``video_is_live`` error."""
+        super().__init__("video_is_live", 422, "Video is a live broadcast", detail)
+
+
+class VideoTooLongError(IshaaraError):
+    """Raised when a video exceeds the maximum accepted duration."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 422 ``video_too_long`` error."""
+        super().__init__("video_too_long", 422, "Video is too long", detail)
+
+
+class InvalidTokenError(IshaaraError):
+    """Raised when the Firebase ID token is missing or invalid."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 401 ``invalid_token`` error."""
+        super().__init__("invalid_token", 401, "Invalid or missing token", detail)
+
+
+class VideoNotFoundError(IshaaraError):
+    """Raised when a video does not exist."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 404 ``video_not_found`` error."""
+        super().__init__("video_not_found", 404, "Video not found", detail)

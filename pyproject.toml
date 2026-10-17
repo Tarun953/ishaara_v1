@@ -61,3 +61,7 @@ dev = [
     "respx>=0.23.1",
     "ruff>=0.17.1",
 ]
+
+[[tool.mypy.overrides]]
+module = ["isodate", "firebase_admin", "firebase_admin.*"]
+ignore_missing_imports = true

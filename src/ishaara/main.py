@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,9 +15,11 @@ from ishaara.settings import get_settings
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Configure logging on startup."""
+    """Configure logging and own the shared HTTP client for the app's lifetime."""
     configure_logging(get_settings().log_level)
-    yield
+    async with httpx.AsyncClient() as http_client:
+        app.state.http_client = http_client
+        yield
 
 
 def create_app() -> FastAPI:
