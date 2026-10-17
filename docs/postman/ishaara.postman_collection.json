@@ -315,6 +315,52 @@
               }
             }
           ]
+        },
+        {
+          "name": "POST /v1/videos/{video_key}/questions - ask",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/videos/{{videoKey}}/questions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "videos",
+                "{{videoKey}}",
+                "questions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"{{question}}\",\n  \"at_seconds\": \"{{atSeconds}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Ask about a finished video. Costs Gemini calls and one of the 50 daily questions. `atSeconds` is optional: remove the field to ask without a time."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with an answer', () => { pm.response.to.have.status(200); const b = pm.response.json(); pm.expect(b.answer_text).to.be.a('string').and.not.empty; pm.expect(b.referenced_seconds).to.be.an('array'); });",
+                  "pm.test('audio url is a string or null', () => { const u = pm.response.json().answer_audio_url; pm.expect(u === null || typeof u === 'string').to.be.true; });"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -535,6 +581,51 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('404 video_not_found', () => { pm.response.to.have.status(404); pm.expect(pm.response.json().code).to.eql('video_not_found'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Blank question -> 422 invalid_request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/videos/{{videoKey}}/questions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "videos",
+                "{{videoKey}}",
+                "questions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A blank question is rejected before any Gemini call."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 invalid_request', () => { pm.response.to.have.status(422); pm.expect(pm.response.json().code).to.eql('invalid_request'); });"
                 ]
               }
             }

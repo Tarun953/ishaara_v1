@@ -13,6 +13,7 @@ from ishaara.clients.repository_factory import build_repositories
 from ishaara.clients.youtube_metadata import YouTubeMetadataClient
 from ishaara.pipeline.orchestrator import VideoPipeline
 from ishaara.services.job_runner import JobRunner
+from ishaara.services.question_service import QuestionService
 from ishaara.services.video_service import VideoService
 from ishaara.settings import Settings
 
@@ -31,6 +32,7 @@ class AppContainer:
         usage: Daily quota counters.
         job_runner: Runs background jobs.
         blob_storage: Audio and transcript storage.
+        question_service: Answers questions about processed videos.
         close_callback: Releases connections after the jobs are stopped.
     """
 
@@ -39,6 +41,7 @@ class AppContainer:
     usage: UsageRepository
     job_runner: JobRunner
     blob_storage: BlobStorage
+    question_service: QuestionService
     close_callback: Callable[[], Awaitable[None]] = _nothing_to_close
 
     async def close(self) -> None:
@@ -60,9 +63,8 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
     repositories = build_repositories(settings)
     metadata_client = YouTubeMetadataClient(settings.youtube_api_key, http_client)
     blob_storage = build_blob_storage(settings, http_client)
-    pipeline = VideoPipeline(
-        repositories.videos, metadata_client, GoogleGeminiGateway(settings), blob_storage, settings
-    )
+    gateway = GoogleGeminiGateway(settings)
+    pipeline = VideoPipeline(repositories.videos, metadata_client, gateway, blob_storage, settings)
     job_runner = JobRunner(repositories.videos, pipeline.run)
     video_service = VideoService(
         repositories.videos, repositories.usage, metadata_client, job_runner, settings
@@ -73,5 +75,6 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
         repositories.usage,
         job_runner,
         blob_storage,
+        QuestionService(repositories.usage, gateway, blob_storage, settings),
         repositories.close,
     )

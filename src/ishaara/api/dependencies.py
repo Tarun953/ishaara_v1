@@ -14,6 +14,7 @@ from ishaara.container import AppContainer
 from ishaara.errors import InvalidTokenError, VideoNotFoundError, VideoNotReadyError
 from ishaara.models.api_models import AuthenticatedUser
 from ishaara.models.domain import VideoRecord, VideoStatus
+from ishaara.services.question_service import QuestionService
 from ishaara.services.video_service import VideoService
 from ishaara.settings import Settings, get_settings
 
@@ -114,3 +115,10 @@ async def get_ready_video(
         raise VideoNotReadyError("This video is queued and has not started processing yet.")
     where = f" (stage {record.stage.value}, {record.progress_percent}%)" if record.stage else ""
     raise VideoNotReadyError(f"This video is still being processed{where}. Try again shortly.")
+
+
+def get_question_service(
+    container: Annotated[AppContainer, Depends(get_container)],
+) -> QuestionService:
+    """Return the question service."""
+    return container.question_service

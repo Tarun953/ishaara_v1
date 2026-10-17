@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ishaara.api import health, videos
+from ishaara.api import health, questions, videos
 from ishaara.clients.local_blob_storage import MEDIA_URL_PREFIX, PUBLIC_DIRECTORY
 from ishaara.container import AppContainer, build_container
 from ishaara.errors import (
@@ -68,6 +68,7 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
     app.add_exception_handler(Exception, unexpected_error_handler)
     app.include_router(health.router)
     app.include_router(videos.router)
+    app.include_router(questions.router)
     if settings.storage_backend == "local":
         # Local development only (production refuses STORAGE_BACKEND=local).
         media_directory = Path(settings.local_storage_dir) / PUBLIC_DIRECTORY

@@ -13,6 +13,7 @@ from ishaara.models.domain import NarrationLanguage, ReferentKind, VideoStatus
 from ishaara.models.gemini_schemas import ChunkAnalysis, TranscriptSegmentRaw, VisualEvent
 from ishaara.pipeline.orchestrator import VideoPipeline
 from ishaara.services.job_runner import JobRunner
+from ishaara.services.question_service import QuestionService
 from ishaara.services.video_service import VideoService, build_video_key
 from ishaara.settings import Settings, get_settings
 from tests.conftest import FakeBlobStorage, FakeGeminiGateway, FakeMetadataSource
@@ -45,10 +46,16 @@ def _container(settings: Settings, privacy_status: str = "public") -> AppContain
             )
         ],
     )
-    pipeline = VideoPipeline(videos, metadata, FakeGeminiGateway({0: analysis}), storage, settings)
+    gateway = FakeGeminiGateway({0: analysis})
+    pipeline = VideoPipeline(videos, metadata, gateway, storage, settings)
     runner = JobRunner(videos, pipeline.run)
     return AppContainer(
-        VideoService(videos, usage, metadata, runner, settings), videos, usage, runner, storage
+        VideoService(videos, usage, metadata, runner, settings),
+        videos,
+        usage,
+        runner,
+        storage,
+        QuestionService(usage, gateway, storage, settings),
     )
 
 

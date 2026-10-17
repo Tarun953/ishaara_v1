@@ -185,3 +185,11 @@ class VideoNotReadyError(IshaaraError):
     def __init__(self, detail: str) -> None:
         """Build a 409 ``video_not_ready`` error."""
         super().__init__("video_not_ready", 409, "Video is not ready", detail)
+
+
+class InvalidRequestError(IshaaraError):
+    """Raised when a request is well-formed JSON but asks for something impossible."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 422 ``invalid_request`` error."""
+        super().__init__("invalid_request", 422, "Invalid request", detail)

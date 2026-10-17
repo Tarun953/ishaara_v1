@@ -1,8 +1,9 @@
 """Request and response bodies and small shared value models for the HTTP API."""
 
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from ishaara.models.domain import (
     NarrationCue,
@@ -119,3 +120,35 @@ class CuesResponse(BaseModel):
     """Body of ``GET /v1/videos/{video_key}/cues``."""
 
     cues: list[NarrationCue]
+
+
+MAX_QUESTION_CHARACTERS = 500
+
+
+class AskQuestionRequest(BaseModel):
+    """Body of ``POST /v1/videos/{video_key}/questions``.
+
+    Attributes:
+        question: The student's question, trimmed, 1 to 500 characters.
+        at_seconds: Where in the video the student is, if they want an answer about that moment.
+    """
+
+    question: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_QUESTION_CHARACTERS),
+    ]
+    at_seconds: float | None = Field(default=None, ge=0)
+
+
+class QuestionResponse(BaseModel):
+    """Body of the answer to a question.
+
+    Attributes:
+        answer_text: The written answer.
+        answer_audio_url: The spoken answer, or ``null`` if it could not be voiced.
+        referenced_seconds: Lecture times the answer relies on, ascending.
+    """
+
+    answer_text: str
+    answer_audio_url: str | None
+    referenced_seconds: list[float]

@@ -12,6 +12,7 @@ import structlog
 
 from ishaara.clients.gemini_gateway import (
     AnalyzeClipResult,
+    AnswerResult,
     GeminiGateway,
     GoogleGeminiGateway,
     JudgeGapsResult,
@@ -130,9 +131,19 @@ class _Pass1ReplayGateway:
         """Delegate to the live gateway."""
         return await self._live_gateway.synthesize_speech(narration_text, narration_language)
 
-    async def answer_question(self, question: str, context_text: str) -> str:
+    async def answer_question(
+        self, question: str, context_text: str, at_seconds: float | None
+    ) -> AnswerResult:
         """Delegate to the live gateway."""
-        return await self._live_gateway.answer_question(question, context_text)
+        return await self._live_gateway.answer_question(question, context_text, at_seconds)
+
+    async def answer_with_video(
+        self, youtube_video_id: str, question: str, window: ClipWindow, at_seconds: float
+    ) -> AnswerResult:
+        """Delegate to the live gateway."""
+        return await self._live_gateway.answer_with_video(
+            youtube_video_id, question, window, at_seconds
+        )
 
 
 async def _analyze(args: argparse.Namespace, settings: Settings) -> list[NarrationCue]:

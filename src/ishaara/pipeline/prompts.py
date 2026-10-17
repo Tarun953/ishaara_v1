@@ -81,6 +81,41 @@ CUES
 {cue_lines}
 """
 
+QUESTION_PROMPT = """\
+You are answering a question from a blind student about a recorded lecture.
+Answer using only the lecture material below.
+- At most 80 words. Plain spoken language; write math in words.
+- Answer in the language of the question (English or Hindi) and set answer_language
+  to "en" or "hi".
+- List the lecture times your answer relies on in referenced_timestamps as MM:SS.
+- If the material is not enough to answer and the question is about what was on the board
+  or screen, set needs_visual_check to true and say briefly what you could not tell.
+  Otherwise set it to false.
+- Never invent what was on screen.
+
+{time_note}
+
+LECTURE MATERIAL
+{context_text}
+
+QUESTION
+{question}
+"""
+
+VISUAL_QUESTION_PROMPT = """\
+You are answering a question from a blind student about a recorded lecture.
+This clip covers {clip_start_mmss} to {clip_end_mmss} of the full video, and the student
+was at {at_mmss}. Answer from what the clip shows and what is said in it.
+- At most 80 words. Plain spoken language; write math in words.
+- Answer in the language of the question (English or Hindi) and set answer_language
+  to "en" or "hi".
+- Write referenced_timestamps as absolute video time in MM:SS.
+- Set needs_visual_check to false.
+
+QUESTION
+{question}
+"""
+
 NARRATION_LANGUAGE_NAMES = {NarrationLanguage.ENGLISH: "English", NarrationLanguage.HINDI: "Hindi"}
 NARRATION_BOARD_RULES = {
     NarrationLanguage.ENGLISH: (
@@ -158,4 +193,42 @@ def build_narration_prompt(
         language_name=NARRATION_LANGUAGE_NAMES[narration_language],
         board_rule=NARRATION_BOARD_RULES[narration_language],
         cue_lines=cue_lines,
+    )
+
+
+def build_question_prompt(question: str, context_text: str, at_seconds: float | None) -> str:
+    """Fill the text-only question prompt.
+
+    Args:
+        question: The student's question.
+        context_text: Transcript and cue material around the question.
+        at_seconds: Where the student is in the video, if known.
+
+    Returns:
+        The prompt text.
+    """
+    time_note = (
+        f"The student was at {format_timestamp(int(at_seconds))} in the video."
+        if at_seconds is not None
+        else "The student did not say where in the video they are."
+    )
+    return QUESTION_PROMPT.format(time_note=time_note, context_text=context_text, question=question)
+
+
+def build_visual_question_prompt(question: str, window: ClipWindow, at_seconds: float) -> str:
+    """Fill the prompt used with a short video clip.
+
+    Args:
+        question: The student's question.
+        window: The clip being looked at.
+        at_seconds: Where the student is in the video.
+
+    Returns:
+        The prompt text.
+    """
+    return VISUAL_QUESTION_PROMPT.format(
+        clip_start_mmss=format_timestamp(window.start_seconds),
+        clip_end_mmss=format_timestamp(window.end_seconds),
+        at_mmss=format_timestamp(int(at_seconds)),
+        question=question,
     )

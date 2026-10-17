@@ -5,7 +5,7 @@ Every field carries a description because Gemini reads descriptions as instructi
 
 from pydantic import BaseModel, Field
 
-from ishaara.models.domain import ReferentKind, SpeechCoverage
+from ishaara.models.domain import NarrationLanguage, ReferentKind, SpeechCoverage
 
 
 class TranscriptSegmentRaw(BaseModel):
@@ -76,3 +76,20 @@ class NarrationBatch(BaseModel):
     """Narration output: exactly one line per input cue."""
 
     lines: list[NarrationLine]
+
+
+class QuestionAnswer(BaseModel):
+    """Gemini's answer to a student's question about the lecture."""
+
+    answer_text: str = Field(
+        description="The answer: at most 80 words, plain spoken language, math written in words."
+    )
+    referenced_timestamps: list[str] = Field(
+        description="Lecture times the answer relies on, as MM:SS (or HH:MM:SS)."
+    )
+    needs_visual_check: bool = Field(
+        description="True if the lecture material is not enough and the video must be looked at."
+    )
+    answer_language: NarrationLanguage = Field(
+        description="Language the answer is written in: 'en' for English or 'hi' for Hindi."
+    )

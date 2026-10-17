@@ -255,3 +255,140 @@ def test_each_retry_is_logged_with_model_attempt_and_error() -> None:
             "error": "took too long",
         }
     ]
+
+
+def _answer_json(**overrides: object) -> str:
+    import json
+
+    fields: dict[str, object] = {
+        "answer_text": "A circle with a tick mark.",
+        "referenced_timestamps": ["00:23"],
+        "needs_visual_check": False,
+        "answer_language": "en",
+    }
+    fields.update(overrides)
+    return json.dumps(fields)
+
+
+class _TokenInteraction(_FakeInteraction):
+    def __init__(self, output_text: str) -> None:
+        super().__init__(output_text)
+        self.usage = _Usage()  # type: ignore[assignment]
+
+
+async def test_text_answer_uses_the_text_model_and_puts_context_in_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: dict[str, object] = {}
+
+    async def reply(*args: object, **kwargs: object) -> _TokenInteraction:
+        sent.update(kwargs)
+        return _TokenInteraction(_answer_json(needs_visual_check=True))
+
+    gateway = _gateway()
+    monkeypatch.setattr(gateway, "_create_json_interaction", reply)
+
+    result = await gateway.answer_question("What is on the board?", "[00:20] A and B run.", 83.0)
+
+    assert sent["model"] == "gemini-3.5-flash-lite"
+    prompt = sent["input_items"][0]["text"]  # type: ignore[index]
+    assert "What is on the board?" in prompt and "[00:20] A and B run." in prompt
+    assert "The student was at 01:23 in the video." in prompt
+    assert result.answer.needs_visual_check is True
+    assert result.answer.answer_language == NarrationLanguage.ENGLISH
+    assert (result.input_tokens, result.output_tokens) == (11, 4)
+
+
+async def test_text_answer_without_a_time_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+    prompts: list[str] = []
+
+    async def reply(*args: object, **kwargs: object) -> _TokenInteraction:
+        prompts.append(kwargs["input_items"][0]["text"])  # type: ignore[index]
+        return _TokenInteraction(_answer_json())
+
+    gateway = _gateway()
+    monkeypatch.setattr(gateway, "_create_json_interaction", reply)
+
+    await gateway.answer_question("What was this about?", "context", None)
+
+    assert "did not say where in the video" in prompts[0]
+
+
+async def test_video_answer_sends_the_clip_offsets_and_uses_the_video_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: dict[str, object] = {}
+
+    async def reply(*args: object, **kwargs: object) -> _TokenInteraction:
+        sent.update(kwargs)
+        return _TokenInteraction(_answer_json(answer_language="hi"))
+
+    gateway = _gateway()
+    monkeypatch.setattr(gateway, "_create_json_interaction", reply)
+
+    result = await gateway.answer_with_video(
+        "dQw4w9WgXcQ", "बोर्ड पर क्या है?", ClipWindow(65, 95), 80.0
+    )
+
+    assert sent["model"] == "gemini-3.8-flash"
+    video, text = sent["input_items"]  # type: ignore[misc]
+    assert video["uri"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    assert video["processing"] == {"type": "static", "start_offset": "65s", "end_offset": "95s"}
+    assert "01:05 to 01:35" in text["text"] and "01:20" in text["text"]
+    assert result.answer.answer_language == NarrationLanguage.HINDI
+
+
+async def test_unusable_answer_json_becomes_gemini_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def reply(*args: object, **kwargs: object) -> _FakeInteraction:
+        return _FakeInteraction('{"answer_text": "x"}')
+
+    gateway = _gateway()
+    monkeypatch.setattr(gateway, "_create_json_interaction", reply)
+
+    with pytest.raises(GeminiError) as error_info:
+        await gateway.answer_question("q", "c", None)
+    with pytest.raises(GeminiError):
+        await gateway.answer_with_video("dQw4w9WgXcQ", "q", ClipWindow(0, 30), 15.0)
+
+    assert error_info.value.code == "gemini_invalid_response"
+
+
+def test_the_sdk_client_is_built_with_its_own_retries_turned_off() -> None:
+    from google.genai._gaos.google_genai import _translate_retry_config
+
+    from ishaara.clients.gemini_gateway import sdk_http_options
+
+    assert _translate_retry_config(sdk_http_options()).max_retries == 0
+
+
+async def test_a_hung_call_is_cut_off_at_its_deadline_and_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from ishaara.clients import gemini_gateway
+
+    started = 0
+
+    async def hang(*args: object, **kwargs: object) -> None:
+        nonlocal started
+        started += 1
+        await asyncio.Event().wait()  # never returns
+
+    real_sleep = asyncio.sleep
+
+    async def instant_backoff(delay: float, *args: object) -> None:
+        await real_sleep(0)
+
+    monkeypatch.setattr(gemini_gateway, "TTS_TIMEOUT_SECONDS", 0.02)
+    monkeypatch.setattr(gemini_gateway, "DEADLINE_MARGIN_SECONDS", 0.02)
+    monkeypatch.setattr(asyncio, "to_thread", hang)
+    monkeypatch.setattr(asyncio, "sleep", instant_backoff)
+    gateway = GoogleGeminiGateway(Settings(_env_file=None, gemini_api_key="test-key"))
+
+    with pytest.raises(GeminiError) as error_info:
+        await gateway.synthesize_speech("hello", NarrationLanguage.ENGLISH)
+
+    assert error_info.value.code == "gemini_error"
+    assert "in time" in error_info.value.detail
+    assert started == 3  # the three attempts the retry layer allows, and no more

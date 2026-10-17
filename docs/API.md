@@ -61,7 +61,7 @@ Branch on `code`, not on `detail`; `detail` is for humans.
 | `video_too_long` | 422 | Longer than `MAX_VIDEO_MINUTES` (45) |
 | `video_not_found` | 404 | No YouTube video with that id, or no stored video with that `video_key` |
 | `video_not_ready` | 409 | Cues, WebVTT or notes requested before the video is `ready`, or it `failed` |
-| `daily_limit_reached` | 429 | The user used up `DAILY_VIDEO_LIMIT` (10) new videos today (UTC) |
+| `daily_limit_reached` | 429 | The user used up `DAILY_VIDEO_LIMIT` (10) new videos, or `DAILY_QUESTION_LIMIT` (50) questions, today (UTC) |
 | `youtube_unavailable` | 502 | The YouTube Data API kept failing |
 | `gemini_error` | 502 | A Gemini call failed. Appears as a video's `error_code`. |
 | `gemini_invalid_response` | 502 | Gemini returned unusable output. Appears as a video's `error_code`. |
@@ -311,6 +311,56 @@ Now what is a circular track? Instead of running in a straight line, people run 
 
 ---
 
+### `POST /v1/videos/{video_key}/questions`
+
+**Use case:** the student asks something the cues did not cover ("What was on the board at
+12:40?", "Why did he divide by two?") and hears the answer spoken. It works on a finished
+video only.
+
+**Request body**
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `question` | string, 1 to 500 characters | Trimmed. English or Hindi. |
+| `at_seconds` | number or `null` | Where the student is in the video. Optional, at least 0 and not past the end of the video. |
+
+```bash
+curl -X POST http://localhost:8000/v1/videos/v8kBd64_WAc_en_v2/questions \
+  -H "Authorization: Bearer $FIREBASE_ID_TOKEN" -H "Content-Type: application/json" \
+  -d '{"question": "What is drawn on the board right now?", "at_seconds": 25}'
+```
+```json
+{
+  "answer_text": "A circle representing a track, with a tick mark at the bottom labelled A and B.",
+  "answer_audio_url": "https://<project>.supabase.co/storage/v1/object/public/narrations/answers/v8kBd64_WAc_en_v2/3f9c1a....wav",
+  "referenced_seconds": [23.0]
+}
+```
+
+| Status | Meaning |
+| --- | --- |
+| `200` | The answer. `answer_audio_url` is `null` if the answer could not be voiced; the text is always there. |
+| `404 video_not_found`, `409 video_not_ready` | No such video, or it has not finished processing |
+| `422 invalid_request` | Blank or over-long question, negative `at_seconds`, or `at_seconds` past the end of the video |
+| `429 daily_limit_reached` | The user already asked 50 questions today (UTC) |
+| `502 gemini_error`, `gemini_invalid_response` | Gemini failed or returned nothing usable |
+
+**How the answer is found**
+
+1. With `at_seconds`, the transcript sentences and cue descriptions within 2 minutes either
+   side are given to Gemini. Without it, all cue descriptions and the transcript are.
+2. If that is not enough to say what was on the board **and** `at_seconds` was given, Gemini
+   looks at the 30-second clip around that moment (15 seconds either side) and answers from
+   the video. Without `at_seconds` a board question can only be answered from the text.
+3. The answer is written in the language of the question (English or Hindi), and spoken in
+   that language. The audio file has a random, unguessable public URL.
+
+Each question counts against the daily limit before Gemini is called, so a question that then
+fails on Gemini's side still uses one of the 50. Expect a few seconds for a text answer and
+more when the video is looked at.
+
+---
+
 ### `GET /media/{path}` (local development only)
 
 **Use case:** plays narration audio when `STORAGE_BACKEND=local`, so the whole flow works
@@ -353,13 +403,11 @@ A finished video holds a list of cues, returned by `GET /v1/videos/{video_key}/c
 | Limit | Value | Setting |
 | --- | --- | --- |
 | New videos per user per day (UTC) | 10 | `DAILY_VIDEO_LIMIT` |
+| Questions per user per day (UTC) | 50 | `DAILY_QUESTION_LIMIT` |
+| Question length | 500 characters | fixed |
 | Longest video | 45 minutes | `MAX_VIDEO_MINUTES` |
 | Gemini free tier | 8 hours of YouTube video per day across all users | Google's quota |
 
 ## Planned endpoints
 
-Not implemented yet; the shape may change before it lands.
-
-| Endpoint | Milestone | Use case |
-| --- | --- | --- |
-| `POST /v1/videos/{video_key}/questions` | M6 | Ask a question about the lecture and get a spoken answer |
+None. Every endpoint planned for the first release exists.

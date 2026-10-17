@@ -7,15 +7,16 @@ from fastapi.testclient import TestClient
 
 from ishaara.clients.gemini_gateway import (
     AnalyzeClipResult,
+    AnswerResult,
     JudgeGapsResult,
     NarrationResult,
     SpeechResult,
 )
-from ishaara.errors import StorageError
+from ishaara.errors import GeminiError, StorageError
 from ishaara.main import create_app
 from ishaara.models.api_models import YouTubeVideoMetadata
 from ishaara.models.domain import NarrationCue, NarrationLanguage, SpeechCoverage
-from ishaara.models.gemini_schemas import ChunkAnalysis, GapJudgement, GapReport
+from ishaara.models.gemini_schemas import ChunkAnalysis, GapJudgement, GapReport, QuestionAnswer
 from ishaara.pipeline.chunking import ClipWindow
 
 
@@ -40,10 +41,29 @@ class FakeGeminiGateway:
         self,
         analyses_by_window_start: dict[int, ChunkAnalysis] | None = None,
         reports_by_window_start: dict[int, GapReport] | None = None,
+        text_answer: QuestionAnswer | None = None,
+        visual_answer: QuestionAnswer | None = None,
     ) -> None:
         self.analyses_by_window_start = analyses_by_window_start or {}
         self.reports_by_window_start = reports_by_window_start or {}
         self.analyzed_windows: list[ClipWindow] = []
+        self.text_answer = text_answer or QuestionAnswer(
+            answer_text="A circle was drawn.",
+            referenced_timestamps=["00:23"],
+            needs_visual_check=False,
+            answer_language=NarrationLanguage.ENGLISH,
+        )
+        self.visual_answer = visual_answer or QuestionAnswer(
+            answer_text="The clip shows a tick mark.",
+            referenced_timestamps=["00:25"],
+            needs_visual_check=False,
+            answer_language=NarrationLanguage.ENGLISH,
+        )
+        self.fail_speech = False
+        self.fail_visual = False
+        self.speech_requests: list[tuple[str, NarrationLanguage]] = []
+        self.text_questions: list[tuple[str, str, float | None]] = []
+        self.visual_questions: list[tuple[str, str, ClipWindow, float]] = []
 
     async def analyze_clip(self, youtube_video_id: str, window: ClipWindow) -> AnalyzeClipResult:
         self.analyzed_windows.append(window)
@@ -75,16 +95,31 @@ class FakeGeminiGateway:
     async def synthesize_speech(
         self, narration_text: str, narration_language: NarrationLanguage
     ) -> SpeechResult:
+        self.speech_requests.append((narration_text, narration_language))
+        if self.fail_speech:
+            raise GeminiError("gemini_error", "Gemini request failed (status 503).")
         return SpeechResult(make_wav(), 3, 7)
 
-    async def answer_question(self, question: str, context_text: str) -> str:
-        return "fake answer"
+    async def answer_question(
+        self, question: str, context_text: str, at_seconds: float | None
+    ) -> AnswerResult:
+        self.text_questions.append((question, context_text, at_seconds))
+        return AnswerResult(self.text_answer, 20, 8)
+
+    async def answer_with_video(
+        self, youtube_video_id: str, question: str, window: ClipWindow, at_seconds: float
+    ) -> AnswerResult:
+        self.visual_questions.append((youtube_video_id, question, window, at_seconds))
+        if self.fail_visual:
+            raise GeminiError("gemini_error", "Gemini request failed (status 503).")
+        return AnswerResult(self.visual_answer, 200, 12)
 
 
 class FakeBlobStorage:
     """Keeps uploads in memory; can be told to fail specific uploads."""
 
-    def __init__(self, fail_private: bool = False) -> None:
+    def __init__(self, fail_private: bool = False, fail_public: bool = False) -> None:
+        self.fail_public = fail_public
         self.public: dict[str, bytes] = {}
         self.private: dict[str, bytes] = {}
         self.fail_private = fail_private
@@ -92,6 +127,8 @@ class FakeBlobStorage:
     async def upload_public(
         self, path: str, data: bytes, content_type: str, cache_control: str
     ) -> str:
+        if self.fail_public:
+            raise StorageError("public storage is down")
         self.public[path] = data
         return f"https://audio.test/{path}"
 

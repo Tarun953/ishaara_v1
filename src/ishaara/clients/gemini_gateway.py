@@ -12,6 +12,7 @@ import structlog
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import interactions
+from google.genai import types as genai_types
 from pydantic import ValidationError
 from tenacity import (
     RetryCallState,
@@ -23,13 +24,20 @@ from tenacity import (
 
 from ishaara.errors import GeminiError
 from ishaara.models.domain import NarrationCue, NarrationLanguage
-from ishaara.models.gemini_schemas import ChunkAnalysis, GapReport, NarrationBatch
+from ishaara.models.gemini_schemas import (
+    ChunkAnalysis,
+    GapReport,
+    NarrationBatch,
+    QuestionAnswer,
+)
 from ishaara.pipeline.chunking import ClipWindow
 from ishaara.pipeline.narration import lines_by_cue_id
 from ishaara.pipeline.prompts import (
     build_analysis_prompt,
     build_gap_judging_prompt,
     build_narration_prompt,
+    build_question_prompt,
+    build_visual_question_prompt,
 )
 from ishaara.pipeline.youtube_url import canonical_watch_url
 from ishaara.settings import Settings
@@ -39,6 +47,7 @@ logger = structlog.get_logger()
 NARRATION_ATTEMPTS = 2
 ANALYSIS_TIMEOUT_SECONDS = 180.0
 TTS_TIMEOUT_SECONDS = 30.0
+DEADLINE_MARGIN_SECONDS = 5.0
 MAX_ATTEMPTS = 3
 SPEECH_STYLE = "calm and clear"
 SPEECH_LANGUAGE_CODES = {NarrationLanguage.ENGLISH: "en-US", NarrationLanguage.HINDI: "hi-IN"}
@@ -108,6 +117,21 @@ class SpeechResult:
     output_tokens: int
 
 
+@dataclass(frozen=True)
+class AnswerResult:
+    """The outcome of answering one question.
+
+    Attributes:
+        answer: Gemini's parsed answer.
+        input_tokens: Input tokens billed.
+        output_tokens: Output tokens billed.
+    """
+
+    answer: QuestionAnswer
+    input_tokens: int
+    output_tokens: int
+
+
 @runtime_checkable
 class GeminiGateway(Protocol):
     """Everything the app needs from Gemini. Business logic depends only on this."""
@@ -132,8 +156,16 @@ class GeminiGateway(Protocol):
         """Speak the text and return it as WAV."""
         ...
 
-    async def answer_question(self, question: str, context_text: str) -> str:
-        """Answer a question from text context (arrives in M6)."""
+    async def answer_question(
+        self, question: str, context_text: str, at_seconds: float | None
+    ) -> AnswerResult:
+        """Answer a question from transcript and cue text."""
+        ...
+
+    async def answer_with_video(
+        self, youtube_video_id: str, question: str, window: ClipWindow, at_seconds: float
+    ) -> AnswerResult:
+        """Answer a question by looking at a short clip of the video."""
         ...
 
 
@@ -141,7 +173,7 @@ def _is_retryable(error: BaseException) -> bool:
     """Return True for 429 and 5xx API errors and network failures."""
     if isinstance(error, genai_errors.APIError):
         return error.code == 429 or error.code >= 500
-    return isinstance(error, httpx.TransportError)
+    return isinstance(error, httpx.TransportError | TimeoutError)
 
 
 def _log_retry(retry_state: RetryCallState) -> None:
@@ -173,6 +205,15 @@ def _token_counts(interaction: interactions.Interaction) -> tuple[int, int]:
     return usage.total_input_tokens or 0, usage.total_output_tokens or 0
 
 
+def sdk_http_options() -> genai_types.HttpOptions:
+    """Return SDK options that turn off the SDK's own retries.
+
+    The gateway has its own retry layer (``tenacity``, logged, with a hard deadline per
+    attempt); letting the SDK retry as well multiplies the waits into minutes.
+    """
+    return genai_types.HttpOptions(retry_options=genai_types.HttpRetryOptions(attempts=0))
+
+
 @contextlib.contextmanager
 def _gemini_errors() -> Iterator[None]:
     """Translate SDK, network and parsing failures into ``GeminiError``."""
@@ -182,6 +223,8 @@ def _gemini_errors() -> Iterator[None]:
         raise GeminiError(
             "gemini_error", f"Gemini request failed (status {error.code})."
         ) from error
+    except TimeoutError as error:
+        raise GeminiError("gemini_error", "Gemini did not respond in time.") from error
     except httpx.TransportError as error:
         raise GeminiError("gemini_error", "Could not reach Gemini.") from error
     except ValidationError as error:
@@ -206,7 +249,9 @@ class GoogleGeminiGateway:
     def _client(self) -> genai.Client:
         """Create the SDK client on first use, so an unset API key only fails real calls."""
         if self._sdk_client is None:
-            self._sdk_client = genai.Client(api_key=self._settings.gemini_api_key)
+            self._sdk_client = genai.Client(
+                api_key=self._settings.gemini_api_key, http_options=sdk_http_options()
+            )
         return self._sdk_client
 
     async def analyze_clip(self, youtube_video_id: str, window: ClipWindow) -> AnalyzeClipResult:
@@ -306,7 +351,10 @@ class GoogleGeminiGateway:
         timeout: float,
         generation_config: dict[str, Any] | None = None,
     ) -> interactions.Interaction:
-        """Make one interaction (blocking SDK call run in a thread), retrying 429/5xx."""
+        """Make one interaction (blocking SDK call in a thread) with a hard deadline per attempt.
+
+        429, 5xx, network failures and missed deadlines are retried by the decorator.
+        """
         request: dict[str, Any] = {
             "model": model,
             "input": input_items,
@@ -315,7 +363,10 @@ class GoogleGeminiGateway:
         }
         if generation_config:
             request["generation_config"] = generation_config
-        interaction = await asyncio.to_thread(self._client.interactions.create, **request)
+        interaction = await asyncio.wait_for(
+            asyncio.to_thread(self._client.interactions.create, **request),
+            timeout=timeout + DEADLINE_MARGIN_SECONDS,
+        )
         if not isinstance(interaction, interactions.Interaction):
             raise TypeError("Expected a unary Interaction, got a stream")
         return interaction
@@ -401,6 +452,74 @@ class GoogleGeminiGateway:
         input_tokens, output_tokens = _token_counts(interaction)
         return SpeechResult(wav_bytes, input_tokens, output_tokens)
 
-    async def answer_question(self, question: str, context_text: str) -> str:
-        """Not implemented until M6."""
-        raise NotImplementedError("answer_question arrives in M6")
+    async def answer_question(
+        self, question: str, context_text: str, at_seconds: float | None
+    ) -> AnswerResult:
+        """Answer a question from the lecture's transcript and cues.
+
+        Args:
+            question: The student's question.
+            context_text: Transcript and cue material around the question.
+            at_seconds: Where the student is in the video, if known.
+
+        Returns:
+            The parsed answer and the tokens billed.
+
+        Raises:
+            GeminiError: If the call fails or returns unusable JSON.
+        """
+        with _gemini_errors():
+            interaction = await self._create_json_interaction(
+                model=self._settings.text_model,
+                input_items=[
+                    {
+                        "type": "text",
+                        "text": build_question_prompt(question, context_text, at_seconds),
+                    }
+                ],
+                response_schema=QuestionAnswer.model_json_schema(),
+            )
+            input_tokens, output_tokens = _token_counts(interaction)
+            answer = QuestionAnswer.model_validate_json(interaction.output_text or "")
+        return AnswerResult(answer, input_tokens, output_tokens)
+
+    async def answer_with_video(
+        self, youtube_video_id: str, question: str, window: ClipWindow, at_seconds: float
+    ) -> AnswerResult:
+        """Answer a question by watching a short clip of the video.
+
+        Args:
+            youtube_video_id: The 11-character video id.
+            question: The student's question.
+            window: The clip to look at, in absolute video time.
+            at_seconds: Where the student is in the video.
+
+        Returns:
+            The parsed answer and the tokens billed.
+
+        Raises:
+            GeminiError: If the call fails or returns unusable JSON.
+        """
+        with _gemini_errors():
+            interaction = await self._create_json_interaction(
+                model=self._settings.analysis_model,
+                input_items=[
+                    {
+                        "type": "video",
+                        "uri": canonical_watch_url(youtube_video_id),
+                        "processing": {
+                            "type": "static",
+                            "start_offset": f"{window.start_seconds}s",
+                            "end_offset": f"{window.end_seconds}s",
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": build_visual_question_prompt(question, window, at_seconds),
+                    },
+                ],
+                response_schema=QuestionAnswer.model_json_schema(),
+            )
+            input_tokens, output_tokens = _token_counts(interaction)
+            answer = QuestionAnswer.model_validate_json(interaction.output_text or "")
+        return AnswerResult(answer, input_tokens, output_tokens)
