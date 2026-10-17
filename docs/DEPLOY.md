@@ -4,12 +4,11 @@ One Cloud Run service in `asia-south1` (Mumbai). It runs the API and, in the sam
 background jobs that analyse videos, so it is deployed with CPU always allocated and at least one
 instance (otherwise a job is frozen as soon as its request returns).
 
-> **What has and has not been verified.** The Docker image builds, starts, answers `/health`,
-> applies the request limits and shuts down cleanly on SIGTERM. The Supabase database and Supabase
-> Storage adapters and the **Firestore adapter** have run against real services (Firestore: the 13
-> repository contract tests passed against the real `ishaara-v1` database) and the **Google Cloud
-> Storage adapter** (public and private upload, read-back and the public/private access rules were
-> checked on the real buckets). **Nothing has been deployed to Cloud Run yet.**
+> **What has and has not been verified.** The service is deployed (Cloud Run, `asia-south1`, Firestore and
+> Cloud Storage) and two real lectures were processed on it end to end with a temporary Firebase user:
+> submit, poll, cues, WebVTT, notes, text and board questions, cache hits and history. The Docker image,
+> graceful shutdown and every database and storage adapter were also run against real services. Not
+> verified: speech beyond the free-tier limit (3 requests per minute) and the Postman desktop app.
 
 ## 1. Choose your backends
 
@@ -219,4 +218,8 @@ so only do this when nothing is processing.
 | `video_not_public` or `video_not_embeddable` | The lecture is private, unlisted or has embedding disabled |
 | Videos finish with silent cues (`audio_url` null) | Gemini speech is rate-limited or not responding; the text still works. Check the `gemini_retry` logs and try again later |
 | A video stays `processing` | The instance died; the next request restarts it once its lease has expired (at most 90 s) |
+| Gemini answers 402 "prepayment credits are depleted" | The AI Studio key's prepaid credits ran out. This billing is separate from Google Cloud billing: top up in AI Studio or use another key |
+| Requests time out (504) while a video is processing | Fixed: Gemini calls use their own thread pool. If it returns, check `gemini_retry` logs for stuck calls |
+| Deploy fails with "secret version is disabled" | `latest` fails when the newest version is disabled or destroyed; add a new version or pin a version number |
+| Orphaned `.wav` files in the audio bucket | A failed or interrupted attempt can leave audio behind; it is not cleaned up automatically |
 | Many 429 responses from Gemini | Free-tier limits (about 8 hours of YouTube video per day); enable billing before demo day |

@@ -13,7 +13,8 @@ about the lecture and hear the answer, and download accessible notes.
 | Deployed | Cloud Run, `asia-south1`: `https://ishaara-api-183744304168.asia-south1.run.app` (Firestore + Cloud Storage). Interactive docs at `/docs`. |
 | Built | Everything in the plan: URL and token validation, video analysis, jobs and caching, narration and speech, cues / WebVTT / notes, questions, hardening, demo pre-processing, deploy tooling. |
 | Verified for real | Every database and storage adapter (Supabase, Firestore, Cloud Storage), the Docker image, graceful shutdown, the public checks on the live service, and the Postman collection through Newman on a local server. |
-| Not verified yet | The authenticated flow on the deployed service (needs a Firebase token), pre-processing the demo videos, and speech reliability with the deployed key (see [Known limitations](#known-limitations-and-roadmap)). |
+| Tested on the live service | Two real lectures end to end with a temporary Firebase user (since deleted): submit, poll, cues, WebVTT, notes, text and board questions, cache hits, history. Both videos are still stored. |
+| Not verified yet | Whether the 0-cue result for "Time and Work" matches the video, speech reliability beyond the free-tier limit, and the Postman collection inside the Postman app (see [Known limitations](#known-limitations-and-roadmap)). |
 | Not built | The OpenRouter text backend, and request-level observability (milestone M8). |
 
 ## How it works
@@ -358,8 +359,12 @@ Dockerfile
   because Gemini's description of a slide can differ. In a small experiment pass 2 (judging) was stable and pass 1 (what Gemini sees and writes down) was the variable part; more runs are needed to be sure.
 - **Board notes can appear up to about 30 seconds late** in the notes' reading order.
 - **Visual questions are slow** (about a minute), because Gemini analyses a video clip.
-- **Not yet done:** the authenticated end-to-end run and demo pre-processing on the deployed service; the
-  Postman collection has not been run inside the Postman app.
+- **A text question can come back without audio** when speech is still throttled (the 25-second wait
+  expired in the live test). The written answer is always returned.
+- **Gemini API billing is separate from Google Cloud billing.** An AI Studio key uses prepaid credits;
+  when they run out Gemini answers 402 "prepayment credits are depleted" even if the Cloud project is billed.
+- **Not yet done:** the Postman collection has not been run inside the Postman app, and a 0-cue result
+  (live test: "Time and Work") has not been checked against the video.
 - **Not built:** a hosted open-source text backend (OpenRouter) for answers, request-level observability
   (trace ids, per-stage metrics), and moving jobs to Cloud Tasks so the service can scale to zero.
 
