@@ -1,0 +1,63 @@
+[project]
+name = "ishaara-backend"
+version = "0.1.0"
+description = "Ishaara backend: turns YouTube lectures into spoken board descriptions."
+readme = "README.md"
+authors = [
+    { name = "Tarun Mishra", email = "tarunmisra953@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.3",
+    "firebase-admin>=7.7.0",
+    "google-cloud-storage>=3.17.1",
+    "google-genai>=2.25",
+    "httpx>=0.28.1",
+    "isodate>=0.7.2",
+    "markdown-it-py>=4.2.0",
+    "pydantic-settings>=2.16.0",
+    "structlog>=26.1.0",
+    "tenacity>=9.1.4",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+ishaara = "ishaara.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "ishaara"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.1",
+]
