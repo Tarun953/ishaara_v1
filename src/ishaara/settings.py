@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     min_cue_gap_seconds: float = 6.0
     daily_video_limit: int = 10
     daily_question_limit: int = 50
+    max_request_body_bytes: int = 16384
     allowed_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     auth_bypass_uid: str = ""
     database_backend: Literal["memory", "firestore", "supabase"] = "memory"

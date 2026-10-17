@@ -74,11 +74,13 @@ def test_video_that_is_not_ready_is_409() -> None:
     built = QuestionHarness()
     asyncio.run(
         built.container.videos.create_if_absent(
-            make_record("queued_en_v2", status=VideoStatus.QUEUED)
+            make_record("QueuedVideo_en_v2", status=VideoStatus.QUEUED)
         )
     )
     with built.client:
-        response = built.client.post("/v1/videos/queued_en_v2/questions", json={"question": "hi"})
+        response = built.client.post(
+            "/v1/videos/QueuedVideo_en_v2/questions", json={"question": "hi"}
+        )
 
     assert response.status_code == 409
     assert response.json()["code"] == "video_not_ready"

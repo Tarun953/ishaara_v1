@@ -33,7 +33,7 @@ class IshaaraError(Exception):
         self.detail = detail
 
 
-def _problem_response(code: str, status: int, title: str, detail: str) -> JSONResponse:
+def problem_response(code: str, status: int, title: str, detail: str) -> JSONResponse:
     """Build an RFC 9457 problem details response."""
     return JSONResponse(
         status_code=status,
@@ -63,7 +63,7 @@ async def problem_json_handler(request: Request, error: Exception) -> JSONRespon
     """
     if not isinstance(error, IshaaraError):
         raise TypeError("problem_json_handler only handles IshaaraError")
-    return _problem_response(error.code, error.status, error.title, error.detail)
+    return problem_response(error.code, error.status, error.title, error.detail)
 
 
 async def validation_error_handler(request: Request, error: Exception) -> JSONResponse:
@@ -73,7 +73,7 @@ async def validation_error_handler(request: Request, error: Exception) -> JSONRe
         first = error.errors()[0]
         location = ".".join(str(part) for part in first["loc"])
         detail = f"{location}: {first['msg']}"
-    return _problem_response("invalid_request", 422, "Invalid request", detail)
+    return problem_response("invalid_request", 422, "Invalid request", detail)
 
 
 async def http_exception_handler(request: Request, error: Exception) -> JSONResponse:
@@ -81,7 +81,7 @@ async def http_exception_handler(request: Request, error: Exception) -> JSONResp
     if not isinstance(error, StarletteHTTPException):
         raise TypeError("http_exception_handler only handles HTTP exceptions")
     code = {404: "not_found", 405: "method_not_allowed"}.get(error.status_code, "http_error")
-    return _problem_response(
+    return problem_response(
         code, error.status_code, HTTPStatus(error.status_code).phrase, str(error.detail)
     )
 
@@ -89,7 +89,7 @@ async def http_exception_handler(request: Request, error: Exception) -> JSONResp
 async def unexpected_error_handler(request: Request, error: Exception) -> JSONResponse:
     """Log an unhandled exception and answer 500 without leaking internals."""
     logger.error("unhandled_error", path=request.url.path, exc_info=error)
-    return _problem_response(
+    return problem_response(
         "internal_error", 500, "Internal server error", "Something went wrong. Try again later."
     )
 

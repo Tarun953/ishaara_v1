@@ -220,9 +220,9 @@ def test_result_routes_return_409_while_the_video_is_not_ready() -> None:
     app = create_app(container)
     app.dependency_overrides[get_settings] = lambda: settings
     states = {
-        "queued_en_v2": (VideoStatus.QUEUED, "queued"),
-        "working_en_v2": (VideoStatus.PROCESSING, "still being processed"),
-        "broken_en_v2": (VideoStatus.FAILED, "gemini_error"),
+        "QueuedVideo_en_v2": (VideoStatus.QUEUED, "queued"),
+        "WorkingVide_en_v2": (VideoStatus.PROCESSING, "still being processed"),
+        "BrokenVideo_en_v2": (VideoStatus.FAILED, "gemini_error"),
     }
     with TestClient(app) as test_client:
         for key, (status, _) in states.items():
@@ -294,3 +294,93 @@ def test_notes_reject_an_unknown_format(client: TestClient) -> None:
 
     assert response.status_code == 422
     assert response.json()["code"] == "invalid_request"
+
+
+# ---------------- M7 hardening ----------------
+
+
+@pytest.mark.parametrize("path", ["/v1/videos", "/v1/videos/anything/questions"])
+def test_a_body_with_an_oversized_content_length_is_rejected_with_413(
+    client: TestClient, path: str
+) -> None:
+    response = client.post(
+        path, content=b"x" * 20_000, headers={"Content-Type": "application/json"}
+    )
+
+    assert response.status_code == 413
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["code"] == "request_too_large"
+
+
+def test_a_chunked_body_without_a_length_is_still_limited(client: TestClient) -> None:
+    def chunks() -> Iterator[bytes]:
+        for _ in range(20):
+            yield b"x" * 1_000
+
+    response = client.post(
+        "/v1/videos", content=chunks(), headers={"Content-Type": "application/json"}
+    )
+
+    assert response.status_code == 413
+    assert response.json()["code"] == "request_too_large"
+
+
+def test_a_request_at_the_limit_still_works(client: TestClient) -> None:
+    body = {"youtube_url": URL, "narration_language": "en"}
+
+    assert client.post("/v1/videos", json=body).status_code == 202
+
+
+def test_an_oversized_request_is_rejected_before_authentication() -> None:
+    with _client(Settings(_env_file=None)) as unauthenticated:  # no auth bypass
+        response = unauthenticated.post("/v1/videos", content=b"x" * 20_000)
+
+    assert response.status_code == 413
+
+
+def test_the_oversized_error_carries_cors_headers(client: TestClient) -> None:
+    response = client.post(
+        "/v1/videos",
+        content=b"x" * 20_000,
+        headers={"Origin": "http://localhost:5173", "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 413
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_api_responses_are_not_cacheable_and_nosniff(client: TestClient) -> None:
+    api = client.get("/v1/me/videos")
+    health = client.get("/healthz")
+
+    assert api.headers["cache-control"] == "no-store"
+    assert api.headers["x-content-type-options"] == "nosniff"
+    assert health.headers["x-content-type-options"] == "nosniff"
+    assert "cache-control" not in health.headers
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    ["x", "a" * 300, "dQw4w9WgXcQ_fr_v2", "dQw4w9WgXcQ_en_vX", "dQw4w9WgXc!_en_v2"],
+)
+@pytest.mark.parametrize("suffix", ["", "/cues", "/cues.vtt", "/notes"])
+def test_a_malformed_video_key_is_a_404_that_never_reaches_storage(
+    client: TestClient, bad_key: str, suffix: str
+) -> None:
+    response = client.get(f"/v1/videos/{bad_key}{suffix}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "video_not_found"
+    assert bad_key not in response.json()["detail"]
+
+
+def test_a_malformed_key_cannot_be_asked_about(client: TestClient) -> None:
+    response = client.post("/v1/videos/not-a-key/questions", json={"question": "hi"})
+
+    assert response.status_code == 404
+
+
+def test_an_encoded_slash_in_a_key_matches_no_route_at_all(client: TestClient) -> None:
+    response = client.get("/v1/videos/..%2Fsecrets/cues")
+
+    assert response.status_code == 404

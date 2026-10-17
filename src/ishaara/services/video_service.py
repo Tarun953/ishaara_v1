@@ -1,5 +1,6 @@
 """Video submission: validation, caching, idempotency, restarts and daily quotas."""
 
+import re
 from dataclasses import dataclass
 
 from ishaara.clients.repositories import DailyUsageField, UsageRepository, VideoRepository
@@ -62,6 +63,21 @@ class SubmitResult:
 
     video: VideoStatusResponse
     http_status: int
+
+
+_VIDEO_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}_(en|hi)_v\d{1,4}$")
+
+
+def is_valid_video_key(video_key: str) -> bool:
+    """Say whether a string has the shape of a video key.
+
+    Args:
+        video_key: Text from a URL path.
+
+    Returns:
+        True for ``<11-character id>_<en|hi>_v<number>``; anything else cannot be a stored key.
+    """
+    return _VIDEO_KEY_PATTERN.fullmatch(video_key) is not None
 
 
 def build_video_key(

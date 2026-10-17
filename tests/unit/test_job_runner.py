@@ -116,3 +116,62 @@ async def test_shutdown_cancels_running_jobs(videos: SpyVideoRepository) -> None
     await runner.shutdown()
 
     assert runner.running_keys == set()
+
+
+async def test_shutdown_expires_the_lease_so_the_next_request_restarts_the_job(
+    videos: SpyVideoRepository,
+) -> None:
+    from datetime import timedelta
+
+    clock = videos._clock
+    live_lease = clock() + timedelta(seconds=90)
+    await videos.create_if_absent(
+        make_record("abc", status=VideoStatus.PROCESSING, lease_expires_at=live_lease)
+    )
+
+    async def pipeline(video_key: str) -> None:
+        await asyncio.Event().wait()
+
+    runner = _runner(videos, pipeline)
+    runner.start("abc")
+    await asyncio.sleep(0)
+    before = await videos.get("abc")
+    assert before is not None and not before.is_restartable(clock())
+
+    await runner.shutdown()
+
+    after = await videos.get("abc")
+    assert after is not None
+    assert after.is_restartable(clock())
+    assert after.status == VideoStatus.PROCESSING  # left for the next request to restart
+
+
+async def test_shutdown_with_nothing_running_touches_nothing(videos: SpyVideoRepository) -> None:
+    async def pipeline(video_key: str) -> None:
+        return None
+
+    runner = _runner(videos, pipeline)
+
+    await runner.shutdown()
+
+    assert videos.lease_renewals == 0
+
+
+async def test_a_failing_lease_write_during_shutdown_does_not_raise(
+    videos: SpyVideoRepository,
+) -> None:
+    async def broken_renew(video_key: str, lease_expires_at: object) -> None:
+        raise RuntimeError("database is gone")
+
+    videos.renew_lease = broken_renew  # type: ignore[method-assign]
+
+    async def pipeline(video_key: str) -> None:
+        await asyncio.Event().wait()
+
+    runner = _runner(videos, pipeline)
+    runner.start("abc")
+    await asyncio.sleep(0)
+
+    await runner.shutdown()  # must not raise
+
+    assert runner.running_keys == set()

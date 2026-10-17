@@ -28,6 +28,8 @@ def parse_youtube_video_id(raw_url: str) -> str:
         InvalidYouTubeUrlError: If no valid video id can be extracted.
     """
     candidate = raw_url.strip()
+    if any(ord(character) < 32 or ord(character) == 127 for character in candidate):
+        raise InvalidYouTubeUrlError("The link contains control characters.")
     if _VIDEO_ID_PATTERN.match(candidate):
         return candidate
     if "://" not in candidate:

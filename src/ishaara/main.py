@@ -22,6 +22,7 @@ from ishaara.errors import (
     validation_error_handler,
 )
 from ishaara.logging_config import configure_logging
+from ishaara.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from ishaara.settings import get_settings
 
 
@@ -56,6 +57,10 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
                 await app.state.container.close()
 
     app = FastAPI(title="Ishaara API", lifespan=lifespan)
+    # The last middleware added is the outermost: CORS wraps the rest so that even a
+    # rejected oversized request carries the CORS headers the browser needs to read the error.
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestSizeLimitMiddleware, max_body_bytes=settings.max_request_body_bytes)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins,

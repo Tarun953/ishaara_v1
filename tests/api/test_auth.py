@@ -77,3 +77,28 @@ def test_bypass_uid_skips_verification(protected_client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["uid"] == "dev-user"
+
+
+@pytest.mark.parametrize(
+    ("project_id", "expected_options"),
+    [("my-project", {"projectId": "my-project"}), ("", None)],
+)
+def test_firebase_is_initialised_with_the_configured_project_id(
+    monkeypatch: pytest.MonkeyPatch, project_id: str, expected_options: dict[str, str] | None
+) -> None:
+    from ishaara.api import dependencies
+
+    received: list[object] = []
+    monkeypatch.setattr(
+        dependencies.firebase_admin, "initialize_app", lambda options=None: received.append(options)
+    )
+    monkeypatch.setattr(
+        dependencies, "get_settings", lambda: Settings(_env_file=None, gcp_project_id=project_id)
+    )
+    dependencies._ensure_firebase_app.cache_clear()
+    try:
+        dependencies._ensure_firebase_app()
+    finally:
+        dependencies._ensure_firebase_app.cache_clear()
+
+    assert received == [expected_options]

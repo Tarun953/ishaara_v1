@@ -25,7 +25,7 @@ from ishaara.models.domain import VideoRecord
 from ishaara.renderers.notes import render_notes_html, render_notes_markdown
 from ishaara.renderers.webvtt import render_description_track
 from ishaara.services.notes_service import load_transcript
-from ishaara.services.video_service import VideoService
+from ishaara.services.video_service import VideoService, is_valid_video_key
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(get_current_user)])
 
@@ -58,9 +58,9 @@ async def get_video_status(
     Raises:
         VideoNotFoundError: If no video has that key.
     """
-    record = await videos.get(video_key)
+    record = await videos.get(video_key) if is_valid_video_key(video_key) else None
     if record is None:
-        raise VideoNotFoundError(f"No video with key {video_key}.")
+        raise VideoNotFoundError("No video with that key.")
     return VideoStatusResponse.from_record(record)
 
 

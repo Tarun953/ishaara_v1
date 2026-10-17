@@ -20,6 +20,7 @@ PipelineRunner = Callable[[str], Awaitable[None]]
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
 DEFAULT_LEASE_SECONDS = 90.0
 INTERNAL_ERROR_CODE = "internal_error"
+SHUTDOWN_EXPIRY_TIMEOUT_SECONDS = 5.0
 
 logger = structlog.get_logger()
 
@@ -82,11 +83,38 @@ class JobRunner:
             await asyncio.gather(*list(self._tasks.values()), return_exceptions=True)
 
     async def shutdown(self) -> None:
-        """Cancel every running job and wait for the cancellations to finish."""
-        tasks = list(self._tasks.values())
+        """Cancel every running job and expire its lease so the next request restarts it.
+
+        Cloud Run allows about 10 seconds after SIGTERM, so the lease writes are best effort
+        and bounded by a short timeout; a lease that is not expired simply runs out by itself.
+        """
+        video_keys = list(self._tasks)
+        tasks = [self._tasks[video_key] for video_key in video_keys]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self._expire_leases(video_keys)
+
+    async def _expire_leases(self, video_keys: list[str]) -> None:
+        """Mark the given videos' leases as expired right now."""
+        if not video_keys:
+            return
+        expired_at = self._clock()
+
+        async def expire(video_key: str) -> None:
+            try:
+                await self._videos.renew_lease(video_key, expired_at)
+            except Exception:
+                logger.warning("lease_expiry_failed", video_key=video_key, exc_info=True)
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*(expire(video_key) for video_key in video_keys)),
+                timeout=SHUTDOWN_EXPIRY_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            logger.warning("lease_expiry_timed_out", videos=len(video_keys))
+        logger.info("jobs_interrupted_for_shutdown", videos=len(video_keys))
 
     async def _run(self, video_key: str) -> None:
         """Run the pipeline with a heartbeat; log and record any crash."""

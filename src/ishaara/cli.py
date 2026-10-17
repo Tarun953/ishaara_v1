@@ -1,4 +1,4 @@
-"""Command-line tool for prompt iteration: ``ishaara analyze <youtube_url>``."""
+"""Command-line tools: ``ishaara analyze`` (prompt tuning) and ``ishaara process`` (demo prep)."""
 
 import argparse
 import asyncio
@@ -20,12 +20,14 @@ from ishaara.clients.gemini_gateway import (
     SpeechResult,
 )
 from ishaara.clients.youtube_metadata import YouTubeMetadataClient
+from ishaara.container import build_container
 from ishaara.logging_config import configure_logging
 from ishaara.models.domain import NarrationCue, NarrationLanguage
 from ishaara.models.gemini_schemas import ChunkAnalysis
 from ishaara.pipeline.chunking import ClipWindow, plan_clip_windows
 from ishaara.pipeline.orchestrator import WindowResult, analyze_windows, merge_window_results
 from ishaara.pipeline.youtube_url import parse_youtube_video_id
+from ishaara.preprocess import process_videos
 from ishaara.services.video_service import validate_video_for_processing
 from ishaara.settings import Settings, get_settings
 
@@ -63,6 +65,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--duration-seconds",
         type=int,
         help="Video length; skips the YouTube metadata lookup (needed without YOUTUBE_API_KEY).",
+    )
+    process = subcommands.add_parser(
+        "process",
+        help="Fully process videos ahead of time (uses the configured database and storage).",
+    )
+    process.add_argument("youtube_urls", nargs="+", metavar="youtube_url")
+    process.add_argument(
+        "--languages",
+        nargs="+",
+        choices=["en", "hi"],
+        default=["en"],
+        help="Narration languages to produce for every link (default: en).",
     )
     return parser
 
@@ -176,14 +190,44 @@ async def _analyze(args: argparse.Namespace, settings: Settings) -> list[Narrati
     )
 
 
+async def _process(args: argparse.Namespace, settings: Settings) -> int:
+    """Pre-process the given videos for real and print one JSON line per outcome."""
+    if settings.database_backend == "memory":
+        raise SystemExit(
+            "Set DATABASE_BACKEND to firestore or supabase: with memory nothing is kept."
+        )
+    if not (settings.gemini_api_key and settings.youtube_api_key):
+        raise SystemExit("Set GEMINI_API_KEY and YOUTUBE_API_KEY (for example in .env).")
+    if settings.storage_backend == "local":
+        logger.warning("audio_stored_locally", note="a deployed service cannot play these files")
+    languages = [NarrationLanguage(code) for code in args.languages]
+    async with httpx.AsyncClient() as http_client:
+        container = build_container(settings, http_client)
+        try:
+            outcomes = await process_videos(container, args.youtube_urls, languages)
+        finally:
+            await container.close()
+    for outcome in outcomes:
+        sys.stdout.write(json.dumps(outcome.to_dict(), ensure_ascii=False) + "\n")
+    return 1 if any(outcome.status == "failed" for outcome in outcomes) else 0
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run the ``ishaara`` command-line tool.
 
     Args:
         argv: Arguments to parse; defaults to ``sys.argv[1:]``.
+
+    Raises:
+        SystemExit: With status 1 if any video given to ``process`` failed.
     """
     args = build_parser().parse_args(argv)
     settings = get_settings()
     configure_logging(settings.log_level, stream=sys.stderr)
+    if args.command == "process":
+        exit_code = asyncio.run(_process(args, settings))
+        if exit_code:
+            raise SystemExit(exit_code)
+        return
     cues = asyncio.run(_analyze(args, settings))
     sys.stdout.write(json.dumps([cue.model_dump(mode="json") for cue in cues], indent=2) + "\n")

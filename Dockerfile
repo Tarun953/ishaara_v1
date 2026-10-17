@@ -10,4 +10,4 @@ COPY src ./src
 RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
-CMD exec uvicorn ishaara.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8080}
+CMD exec uvicorn ishaara.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8080} --timeout-graceful-shutdown 8

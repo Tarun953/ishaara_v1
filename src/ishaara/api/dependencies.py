@@ -15,7 +15,7 @@ from ishaara.errors import InvalidTokenError, VideoNotFoundError, VideoNotReadyE
 from ishaara.models.api_models import AuthenticatedUser
 from ishaara.models.domain import VideoRecord, VideoStatus
 from ishaara.services.question_service import QuestionService
-from ishaara.services.video_service import VideoService
+from ishaara.services.video_service import VideoService, is_valid_video_key
 from ishaara.settings import Settings, get_settings
 
 BEARER_PREFIX = "bearer "
@@ -23,8 +23,13 @@ BEARER_PREFIX = "bearer "
 
 @lru_cache
 def _ensure_firebase_app() -> firebase_admin.App:
-    """Initialize the Firebase Admin app once, using Application Default Credentials."""
-    return firebase_admin.initialize_app()
+    """Initialize the Firebase Admin app once, using Application Default Credentials.
+
+    The Firebase project id is passed explicitly when ``GCP_PROJECT_ID`` is set, so token
+    verification does not depend on guessing it from the environment.
+    """
+    project_id = get_settings().gcp_project_id
+    return firebase_admin.initialize_app(options={"projectId": project_id} if project_id else None)
 
 
 def _extract_bearer_token(request: Request) -> str:
@@ -104,9 +109,9 @@ async def get_ready_video(
         VideoNotFoundError: If no video has that key.
         VideoNotReadyError: If the video is queued, processing or failed.
     """
-    record = await videos.get(video_key)
+    record = await videos.get(video_key) if is_valid_video_key(video_key) else None
     if record is None:
-        raise VideoNotFoundError(f"No video with key {video_key}.")
+        raise VideoNotFoundError("No video with that key.")
     if record.status == VideoStatus.READY:
         return record
     if record.status == VideoStatus.FAILED:
