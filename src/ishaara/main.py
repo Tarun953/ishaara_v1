@@ -1,6 +1,5 @@
 """FastAPI application factory."""
 
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -25,7 +24,7 @@ from ishaara.errors import (
 )
 from ishaara.logging_config import configure_logging
 from ishaara.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
-from ishaara.settings import ENV_NAME_VARIABLE, get_settings
+from ishaara.settings import env_files, get_settings
 
 logger = structlog.get_logger()
 
@@ -48,7 +47,7 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
         configure_logging(settings.log_level)
         logger.info(
             "settings_loaded",
-            env_name=os.environ.get(ENV_NAME_VARIABLE, "local"),
+            env_files=[name for name in env_files() if Path(name).exists()],
             environment=settings.environment,
             database_backend=settings.database_backend,
             storage_backend=settings.storage_backend,

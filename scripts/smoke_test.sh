@@ -27,7 +27,8 @@ check() { # name expected actual
 
 status() { curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$@"; }
 
-check "health check" 200 "$(status "$BASE/healthz")"
+# /health, not /healthz: Cloud Run reserves /healthz and answers it with its own 404.
+check "health check" 200 "$(status "$BASE/health")"
 check "/v1 requires a token" 401 "$(status "$BASE/v1/me/videos")"
 check "oversized body is rejected" 413 \
   "$(head -c 20000 /dev/zero | tr '\0' x | curl -s -o /dev/null -w '%{http_code}' --max-time 60 \

@@ -25,6 +25,37 @@
       "name": "Health",
       "item": [
         {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness check. No authentication. Use /health on Cloud Run: it reserves /healthz.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 ok', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('ok'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "GET /healthz",
           "request": {
             "method": "GET",
@@ -38,7 +69,7 @@
                 "healthz"
               ]
             },
-            "description": "Liveness check. No authentication.",
+            "description": "Liveness check (works locally and in Docker; Cloud Run reserves this path).",
             "auth": {
               "type": "noauth"
             }

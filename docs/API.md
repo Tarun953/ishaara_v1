@@ -71,12 +71,16 @@ Branch on `code`, not on `detail`; `detail` is for humans.
 
 ## Endpoints
 
-### `GET /healthz`
+### `GET /health` (also `GET /healthz`)
 
-**Use case:** liveness check for Cloud Run and for deploy smoke tests. No authentication.
+**Use case:** liveness check for deploy smoke tests and uptime monitors. No authentication.
+
+**On Cloud Run use `/health`.** Cloud Run's front end reserves some paths ending in `z`, including
+`/healthz`, and answers them with its own 404 page before the request reaches the service. `/healthz`
+works everywhere else (local runs, Docker).
 
 ```bash
-curl http://localhost:8000/healthz
+curl http://localhost:8000/health
 ```
 ```json
 { "status": "ok", "version": "0.1.0" }

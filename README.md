@@ -31,7 +31,7 @@ Requirements: Python 3.12 and [`uv`](https://docs.astral.sh/uv/).
 uv sync
 cp .env.example .env     # shared keys: fill in GEMINI_API_KEY and YOUTUBE_API_KEY
 AUTH_BYPASS_UID=dev-user uv run uvicorn ishaara.main:create_app --factory --reload
-curl localhost:8000/healthz
+curl localhost:8000/health
 ```
 
 With just that, nothing needs a cloud account: videos are kept in memory and audio is written to

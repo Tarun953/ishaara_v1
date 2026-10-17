@@ -351,7 +351,7 @@ def test_the_oversized_error_carries_cors_headers(client: TestClient) -> None:
 
 def test_api_responses_are_not_cacheable_and_nosniff(client: TestClient) -> None:
     api = client.get("/v1/me/videos")
-    health = client.get("/healthz")
+    health = client.get("/health")
 
     assert api.headers["cache-control"] == "no-store"
     assert api.headers["x-content-type-options"] == "nosniff"

@@ -4,7 +4,7 @@ One Cloud Run service in `asia-south1` (Mumbai). It runs the API and, in the sam
 background jobs that analyse videos, so it is deployed with CPU always allocated and at least one
 instance (otherwise a job is frozen as soon as its request returns).
 
-> **What has and has not been verified.** The Docker image builds, starts, answers `/healthz`,
+> **What has and has not been verified.** The Docker image builds, starts, answers `/health`,
 > applies the request limits and shuts down cleanly on SIGTERM. The Supabase database and Supabase
 > Storage adapters and the **Firestore adapter** have run against real services (Firestore: the 13
 > repository contract tests passed against the real `ishaara-v1` database) and the **Google Cloud
@@ -210,6 +210,7 @@ so only do this when nothing is processing.
 | Symptom | Likely cause |
 | --- | --- |
 | Deploy fails at startup with a validation error | Production refuses `memory`, `local` storage and `AUTH_BYPASS_UID`; check the variables |
+| `/healthz` returns Google's HTML 404 page | Cloud Run reserves `/healthz`; use `/health` |
 | Every `/v1` call returns 401 | Token from a different Firebase project than `GCP_PROJECT_ID`, an expired token, or the frontend not sending `Authorization: Bearer` |
 | Browser blocks calls | The frontend origin is missing from `ALLOWED_ORIGINS` (exact scheme and host, no trailing slash) |
 | Supabase calls fail or time out | Using the direct host or port 6543 instead of the **session pooler** URL, or the schema was not applied |
