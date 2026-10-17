@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     daily_question_limit: int = 50
     allowed_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     auth_bypass_uid: str = ""
+    database_backend: Literal["memory", "firestore", "supabase"] = "memory"
+    supabase_db_url: str = ""
     log_level: str = "INFO"
 
     @field_validator("allowed_origins", mode="before")
@@ -50,14 +52,17 @@ class Settings(BaseSettings):
         return raw_origins
 
     @model_validator(mode="after")
-    def _refuse_bypass_in_production(self) -> "Settings":
-        """Reject ``AUTH_BYPASS_UID`` when running in production.
+    def _refuse_unsafe_production_settings(self) -> "Settings":
+        """Reject settings that are only safe for local use when in production.
 
         Raises:
-            ValueError: If a bypass uid is set while ``environment`` is ``production``.
+            ValueError: If ``environment`` is ``production`` with an auth bypass uid or the
+                in-memory database.
         """
         if self.environment == "production" and self.auth_bypass_uid:
             raise ValueError("AUTH_BYPASS_UID must not be set when ENVIRONMENT=production")
+        if self.environment == "production" and self.database_backend == "memory":
+            raise ValueError("DATABASE_BACKEND=memory is not allowed when ENVIRONMENT=production")
         return self
 
 

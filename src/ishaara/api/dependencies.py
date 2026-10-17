@@ -5,13 +5,14 @@ from functools import lru_cache
 from typing import Annotated
 
 import firebase_admin
-import httpx
 from fastapi import Depends, Request
 from firebase_admin import auth
 
-from ishaara.clients.youtube_metadata import YouTubeMetadataClient
+from ishaara.clients.repositories import VideoRepository
+from ishaara.container import AppContainer
 from ishaara.errors import InvalidTokenError
 from ishaara.models.api_models import AuthenticatedUser
+from ishaara.services.video_service import VideoService
 from ishaara.settings import Settings, get_settings
 
 BEARER_PREFIX = "bearer "
@@ -61,17 +62,19 @@ async def get_current_user(
     return AuthenticatedUser(uid=decoded_token["uid"], email=decoded_token.get("email"))
 
 
-def get_youtube_client(
-    request: Request, settings: Annotated[Settings, Depends(get_settings)]
-) -> YouTubeMetadataClient:
-    """Build a YouTube metadata client on the app's shared HTTP client.
+def get_container(request: Request) -> AppContainer:
+    """Return the app's container (built in the lifespan)."""
+    container: AppContainer = request.app.state.container
+    return container
 
-    Args:
-        request: The incoming request; ``app.state.http_client`` holds the shared client.
-        settings: Application settings providing the YouTube API key.
 
-    Returns:
-        A ready-to-use ``YouTubeMetadataClient``.
-    """
-    http_client: httpx.AsyncClient = request.app.state.http_client
-    return YouTubeMetadataClient(settings.youtube_api_key, http_client)
+def get_video_service(container: Annotated[AppContainer, Depends(get_container)]) -> VideoService:
+    """Return the video service."""
+    return container.video_service
+
+
+def get_video_repository(
+    container: Annotated[AppContainer, Depends(get_container)],
+) -> VideoRepository:
+    """Return the video repository."""
+    return container.videos

@@ -1,10 +1,17 @@
 """Application errors and their RFC 9457 problem+json rendering."""
 
+from http import HTTPStatus
+
+import structlog
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 PROBLEM_JSON_MEDIA_TYPE = "application/problem+json"
 ERROR_TYPE_BASE_URL = "https://ishaara.app/errors"
+
+logger = structlog.get_logger()
 
 
 class IshaaraError(Exception):
@@ -26,6 +33,21 @@ class IshaaraError(Exception):
         self.detail = detail
 
 
+def _problem_response(code: str, status: int, title: str, detail: str) -> JSONResponse:
+    """Build an RFC 9457 problem details response."""
+    return JSONResponse(
+        status_code=status,
+        media_type=PROBLEM_JSON_MEDIA_TYPE,
+        content={
+            "type": f"{ERROR_TYPE_BASE_URL}/{code}",
+            "title": title,
+            "status": status,
+            "detail": detail,
+            "code": code,
+        },
+    )
+
+
 async def problem_json_handler(request: Request, error: Exception) -> JSONResponse:
     """Render an ``IshaaraError`` as an RFC 9457 problem details response.
 
@@ -41,16 +63,34 @@ async def problem_json_handler(request: Request, error: Exception) -> JSONRespon
     """
     if not isinstance(error, IshaaraError):
         raise TypeError("problem_json_handler only handles IshaaraError")
-    return JSONResponse(
-        status_code=error.status,
-        media_type=PROBLEM_JSON_MEDIA_TYPE,
-        content={
-            "type": f"{ERROR_TYPE_BASE_URL}/{error.code}",
-            "title": error.title,
-            "status": error.status,
-            "detail": error.detail,
-            "code": error.code,
-        },
+    return _problem_response(error.code, error.status, error.title, error.detail)
+
+
+async def validation_error_handler(request: Request, error: Exception) -> JSONResponse:
+    """Render a request validation failure as a 422 ``invalid_request`` problem."""
+    detail = "The request is invalid."
+    if isinstance(error, RequestValidationError) and error.errors():
+        first = error.errors()[0]
+        location = ".".join(str(part) for part in first["loc"])
+        detail = f"{location}: {first['msg']}"
+    return _problem_response("invalid_request", 422, "Invalid request", detail)
+
+
+async def http_exception_handler(request: Request, error: Exception) -> JSONResponse:
+    """Render routing errors such as 404 and 405 as problem details."""
+    if not isinstance(error, StarletteHTTPException):
+        raise TypeError("http_exception_handler only handles HTTP exceptions")
+    code = {404: "not_found", 405: "method_not_allowed"}.get(error.status_code, "http_error")
+    return _problem_response(
+        code, error.status_code, HTTPStatus(error.status_code).phrase, str(error.detail)
+    )
+
+
+async def unexpected_error_handler(request: Request, error: Exception) -> JSONResponse:
+    """Log an unhandled exception and answer 500 without leaking internals."""
+    logger.error("unhandled_error", path=request.url.path, exc_info=error)
+    return _problem_response(
+        "internal_error", 500, "Internal server error", "Something went wrong. Try again later."
     )
 
 
@@ -108,3 +148,24 @@ class VideoNotFoundError(IshaaraError):
     def __init__(self, detail: str) -> None:
         """Build a 404 ``video_not_found`` error."""
         super().__init__("video_not_found", 404, "Video not found", detail)
+
+
+class DailyLimitReachedError(IshaaraError):
+    """Raised when a user has used up a daily quota."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 429 ``daily_limit_reached`` error."""
+        super().__init__("daily_limit_reached", 429, "Daily limit reached", detail)
+
+
+class GeminiError(IshaaraError):
+    """Raised when a Gemini call fails or returns something unusable.
+
+    Args:
+        code: ``gemini_error`` or ``gemini_invalid_response``.
+        detail: Explanation safe to show to the user.
+    """
+
+    def __init__(self, code: str, detail: str) -> None:
+        """Build a 502 error with the given code."""
+        super().__init__(code, 502, "Video analysis failed", detail)

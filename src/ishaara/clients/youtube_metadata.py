@@ -1,5 +1,7 @@
 """YouTube Data API v3 metadata client."""
 
+from typing import Protocol
+
 import httpx
 import isodate
 from tenacity import (
@@ -15,6 +17,14 @@ from ishaara.models.api_models import YouTubeVideoMetadata
 YOUTUBE_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 REQUEST_TIMEOUT_SECONDS = 10.0
 MAX_ATTEMPTS = 3
+
+
+class VideoMetadataSource(Protocol):
+    """Where video metadata comes from (the YouTube Data API in production)."""
+
+    async def fetch(self, youtube_video_id: str) -> YouTubeVideoMetadata:
+        """Return metadata for one video."""
+        ...
 
 
 def _is_retryable(error: BaseException) -> bool:

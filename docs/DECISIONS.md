@@ -15,3 +15,12 @@ Deviations from `ishaara_backend_implementation_plan.md`, one line each.
 - M2: `write_narration`, `synthesize_speech` and `answer_question` on `GeminiGateway` are placeholder signatures and may change in M4 and M6.
 - M2: Only two videos were used: the English circular-track lecture covers both "English math" and "diagrams", and the Hinglish power-set lecture is the third category. The video `resolution` option was not tried.
 - M2: Timestamp normalization can misread a window whose events all fall in its first `window length` seconds as clip-relative; real windows have many events, so this was left as is.
+- M3: Storage is behind `VideoRepository` / `UsageRepository` ports (`clients/repositories.py`) with in-memory, Firestore and Supabase (Postgres via `psycopg`) adapters chosen by `DATABASE_BACKEND`, so tests and demos can avoid Firestore's free-tier quota. State changes live once in `VideoRecord` update dicts that every adapter applies; one contract suite (`tests/contract`) runs against each backend. Production refuses `memory`.
+- M3: Supabase must be reached through the session pooler: the direct host `db.<ref>.supabase.co` is IPv6-only and unreachable from IPv4 networks such as this WSL machine. The current project is in Sydney (about 0.3 s per query); use a Mumbai project for a deployment in `asia-south1`.
+- M3: The Supabase contract tests run in a throwaway schema (`ishaara_test_<id>`) and drop it afterwards. They take about 12 s each because of that latency.
+- M3: The Firestore adapter has only been type-checked; there is no Java or emulator on this machine, so its 13 contract tests are skipped until `FIRESTORE_EMULATOR_HOST` is set.
+- M3: Single-writer updates (progress, lease, ready, failed) are partial writes without a read to save Firestore quota; only create, restart and quota use transactions.
+- M3: The pipeline ends after merge and marks the video `ready` with cues that have no narration text or audio. Bump `PIPELINE_VERSION` to 2 when M4 lands so these cached results are not reused.
+- M3: A user who loses a race between two first submissions of the same video has already spent one daily-video quota unit; this undercounts in the user's favour and was left as is.
+- M3: `get_youtube_client` (M1) was removed; the `AppContainer` composition root owns the YouTube client. Quotas use the UTC date.
+- M3: `GeminiError` (502, `gemini_error` / `gemini_invalid_response`) wraps SDK, network and parsing failures so business logic never imports `google.genai`.

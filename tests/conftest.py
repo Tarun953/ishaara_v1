@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from ishaara.clients.gemini_gateway import AnalyzeClipResult, JudgeGapsResult
 from ishaara.main import create_app
+from ishaara.models.api_models import YouTubeVideoMetadata
 from ishaara.models.domain import NarrationCue, NarrationLanguage, SpeechCoverage
 from ishaara.models.gemini_schemas import ChunkAnalysis, GapJudgement, GapReport
 from ishaara.pipeline.chunking import ClipWindow
@@ -56,6 +57,26 @@ class FakeGeminiGateway:
 
     async def answer_question(self, question: str, context_text: str) -> str:
         return "fake answer"
+
+
+class FakeMetadataSource:
+    """Returns fixed YouTube metadata; never touches the network."""
+
+    def __init__(self, privacy_status: str = "public", duration_seconds: int = 600) -> None:
+        self.privacy_status = privacy_status
+        self.duration_seconds = duration_seconds
+        self.fetches = 0
+
+    async def fetch(self, youtube_video_id: str) -> YouTubeVideoMetadata:
+        self.fetches += 1
+        return YouTubeVideoMetadata(
+            title="Lecture",
+            channel_title="Prof",
+            duration_seconds=self.duration_seconds,
+            privacy_status=self.privacy_status,
+            embeddable=True,
+            live_broadcast_content="none",
+        )
 
 
 @pytest.fixture
