@@ -1,5 +1,6 @@
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,16 +8,18 @@ from fastapi.testclient import TestClient
 from ishaara.clients.memory_repository import InMemoryUsageRepository, InMemoryVideoRepository
 from ishaara.container import AppContainer
 from ishaara.main import create_app
-from ishaara.models.domain import ReferentKind
+from ishaara.models.domain import NarrationLanguage, ReferentKind
 from ishaara.models.gemini_schemas import ChunkAnalysis, VisualEvent
 from ishaara.pipeline.orchestrator import VideoPipeline
 from ishaara.services.job_runner import JobRunner
-from ishaara.services.video_service import VideoService
+from ishaara.services.video_service import VideoService, build_video_key
 from ishaara.settings import Settings, get_settings
-from tests.conftest import FakeGeminiGateway, FakeMetadataSource
+from tests.conftest import FakeBlobStorage, FakeGeminiGateway, FakeMetadataSource
 
 URL = "https://youtu.be/dQw4w9WgXcQ"
-VIDEO_KEY = "dQw4w9WgXcQ_en_v1"
+VIDEO_KEY = build_video_key(
+    "dQw4w9WgXcQ", NarrationLanguage.ENGLISH, Settings(_env_file=None).pipeline_version
+)
 BODY = {"youtube_url": URL, "narration_language": "en"}
 
 
@@ -35,7 +38,9 @@ def _container(settings: Settings, privacy_status: str = "public") -> AppContain
             )
         ],
     )
-    pipeline = VideoPipeline(videos, metadata, FakeGeminiGateway({0: analysis}), settings)
+    pipeline = VideoPipeline(
+        videos, metadata, FakeGeminiGateway({0: analysis}), FakeBlobStorage(), settings
+    )
     runner = JobRunner(videos, pipeline.run)
     return AppContainer(
         VideoService(videos, usage, metadata, runner, settings), videos, usage, runner
@@ -118,7 +123,12 @@ def test_history_lists_submissions_newest_first(client: TestClient) -> None:
 
     assert response.status_code == 200
     keys = [row["video_key"] for row in response.json()["videos"]]
-    assert keys == ["abcdefghijk_en_v1", VIDEO_KEY]
+    assert keys == [
+        build_video_key(
+            "abcdefghijk", NarrationLanguage.ENGLISH, Settings(_env_file=None).pipeline_version
+        ),
+        VIDEO_KEY,
+    ]
 
 
 def test_history_limit_is_validated(client: TestClient) -> None:
@@ -144,3 +154,22 @@ def test_private_video_is_a_422_problem() -> None:
 
     assert response.status_code == 422
     assert response.json()["code"] == "video_not_public"
+
+
+def test_local_media_files_are_served_under_media(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STORAGE_BACKEND", "local")  # do not depend on the developer's .env
+    monkeypatch.setenv("LOCAL_STORAGE_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    try:
+        audio = tmp_path / "public" / "audio" / "k" / "cue-0001.wav"
+        audio.parent.mkdir(parents=True)
+        audio.write_bytes(b"RIFFdata")
+
+        response = TestClient(create_app()).get("/media/audio/k/cue-0001.wav")
+
+        assert response.status_code == 200
+        assert response.content == b"RIFFdata"
+    finally:
+        get_settings.cache_clear()

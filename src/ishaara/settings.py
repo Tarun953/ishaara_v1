@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     text_model: str = "gemini-3.5-flash-lite"
     tts_model: str = "gemini-3.8-flash-lite-tts"
     tts_voice: str = "Kore"
-    pipeline_version: int = 1
+    pipeline_version: int = 2
     max_video_minutes: int = 45
     clip_window_seconds: int = 600
     clip_overlap_seconds: int = 10
@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     auth_bypass_uid: str = ""
     database_backend: Literal["memory", "firestore", "supabase"] = "memory"
     supabase_db_url: str = ""
+    storage_backend: Literal["local", "gcs", "supabase"] = "local"
+    local_storage_dir: str = ".local_storage"
+    public_base_url: str = "http://localhost:8000"
+    supabase_url: str = ""
+    supabase_service_key: str = ""
     log_level: str = "INFO"
 
     @field_validator("allowed_origins", mode="before")
@@ -56,13 +61,15 @@ class Settings(BaseSettings):
         """Reject settings that are only safe for local use when in production.
 
         Raises:
-            ValueError: If ``environment`` is ``production`` with an auth bypass uid or the
-                in-memory database.
+            ValueError: If ``environment`` is ``production`` with an auth bypass uid, the
+                in-memory database or local file storage.
         """
         if self.environment == "production" and self.auth_bypass_uid:
             raise ValueError("AUTH_BYPASS_UID must not be set when ENVIRONMENT=production")
         if self.environment == "production" and self.database_backend == "memory":
             raise ValueError("DATABASE_BACKEND=memory is not allowed when ENVIRONMENT=production")
+        if self.environment == "production" and self.storage_backend == "local":
+            raise ValueError("STORAGE_BACKEND=local is not allowed when ENVIRONMENT=production")
         return self
 
 

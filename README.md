@@ -16,6 +16,12 @@ uv run uvicorn ishaara.main:create_app --factory --reload
 curl localhost:8000/healthz
 ```
 
+## API
+
+See [`docs/API.md`](docs/API.md) for every endpoint and its use cases, and
+[`docs/postman/`](docs/postman/README.md) for a Postman collection. Interactive docs are served
+at `/docs` while the app runs.
+
 ## Storage backends
 
 `DATABASE_BACKEND` selects where videos, history and quotas are stored:
@@ -26,6 +32,13 @@ curl localhost:8000/healthz
   IPv4) and the tables from `supabase/schema.sql`, run once in the Supabase SQL editor.
 
 Production refuses `memory`.
+
+`STORAGE_BACKEND` selects where narration audio and transcripts go:
+
+- `local` (default): files under `LOCAL_STORAGE_DIR`, served by the app at `/media`; development only.
+- `gcs`: Google Cloud Storage; needs `AUDIO_BUCKET` (public) and `TRANSCRIPT_BUCKET` (private).
+- `supabase`: Supabase Storage; needs `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (the **secret** key, never the
+  publishable one), and the same two buckets.
 
 ## Test
 

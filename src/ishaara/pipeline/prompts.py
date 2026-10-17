@@ -1,5 +1,8 @@
 """Prompt templates sent to Gemini. Bump PIPELINE_VERSION whenever these change."""
 
+from collections.abc import Sequence
+
+from ishaara.models.domain import NarrationCue, NarrationLanguage
 from ishaara.models.gemini_schemas import ChunkAnalysis
 from ishaara.pipeline.chunking import ClipWindow
 from ishaara.pipeline.timestamps import format_timestamp
@@ -62,6 +65,32 @@ VISUAL EVENTS
 {event_lines}
 """
 
+NARRATION_PROMPT = """\
+You are writing audio descriptions for blind students watching a recorded lecture.
+For each cue below, the video pauses and your line is spoken aloud. Write ONE line
+per cue, in {language_name}.
+- At most 30 words. Plain, calm spoken language.
+- Say what the student cannot hear: use "what a listener would miss" as the focus
+  and the full description for detail.
+- Speak math naturally ("x squared plus two x"), never as symbols.
+- {board_rule}
+- Do not repeat what the teacher said (shown as "teacher said").
+Return JSON with exactly one line per cue, copying each cue_id exactly.
+
+CUES
+{cue_lines}
+"""
+
+NARRATION_LANGUAGE_NAMES = {NarrationLanguage.ENGLISH: "English", NarrationLanguage.HINDI: "Hindi"}
+NARRATION_BOARD_RULES = {
+    NarrationLanguage.ENGLISH: (
+        'Start with "On the board:" only when the item is on the board or screen.'
+    ),
+    NarrationLanguage.HINDI: (
+        'Start with "बोर्ड पर:" only when the item is on the board or screen. Write in Devanagari.'
+    ),
+}
+
 
 def build_analysis_prompt(window: ClipWindow) -> str:
     """Fill the pass 1 (perception) prompt for one clip window.
@@ -103,4 +132,30 @@ def build_gap_judging_prompt(window: ClipWindow, analysis: ChunkAnalysis) -> str
         clip_end_mmss=format_timestamp(window.end_seconds),
         transcript_lines=transcript_lines or "(no speech)",
         event_lines=event_lines or "(no events)",
+    )
+
+
+def build_narration_prompt(
+    cues: Sequence[NarrationCue], narration_language: NarrationLanguage
+) -> str:
+    """Fill the narration prompt for a batch of cues.
+
+    Args:
+        cues: Cues to describe, in time order.
+        narration_language: Language the lines are written in.
+
+    Returns:
+        The prompt text listing every cue with its gap summary and full description.
+    """
+    cue_lines = "\n".join(
+        f"{cue.cue_id} [{format_timestamp(int(cue.start_seconds))}] ({cue.referent_kind.value}) "
+        f"what a listener would miss: {cue.gap_summary or cue.board_description} | "
+        f"full description: {cue.board_description} | "
+        f"teacher said: {cue.spoken_phrase or '(silent)'}"
+        for cue in cues
+    )
+    return NARRATION_PROMPT.format(
+        language_name=NARRATION_LANGUAGE_NAMES[narration_language],
+        board_rule=NARRATION_BOARD_RULES[narration_language],
+        cue_lines=cue_lines,
     )

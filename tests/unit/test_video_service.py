@@ -8,13 +8,15 @@ from ishaara.errors import DailyLimitReachedError, VideoNotPublicError
 from ishaara.models.api_models import AuthenticatedUser
 from ishaara.models.domain import NarrationLanguage, VideoStatus
 from ishaara.services.job_runner import JobRunner
-from ishaara.services.video_service import VideoService
+from ishaara.services.video_service import VideoService, build_video_key
 from ishaara.settings import Settings
 from tests.conftest import FakeMetadataSource
 from tests.contract.conftest import FakeClock, make_record
 
 URL = "https://youtu.be/dQw4w9WgXcQ"
-VIDEO_KEY = "dQw4w9WgXcQ_en_v1"
+VIDEO_KEY = build_video_key(
+    "dQw4w9WgXcQ", NarrationLanguage.ENGLISH, Settings(_env_file=None).pipeline_version
+)
 USER = AuthenticatedUser(uid="user-1")
 ENGLISH = NarrationLanguage.ENGLISH
 

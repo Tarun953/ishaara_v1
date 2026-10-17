@@ -36,5 +36,5 @@ def configure_logging(log_level: str = "INFO", stream: TextIO | None = None) -> 
         ],
         wrapper_class=structlog.make_filtering_bound_logger(level),
         logger_factory=structlog.PrintLoggerFactory(file=output_stream),
-        cache_logger_on_first_use=True,
+        cache_logger_on_first_use=False,  # keeps structlog.testing.capture_logs reliable
     )

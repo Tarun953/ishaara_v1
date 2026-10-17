@@ -169,3 +169,11 @@ class GeminiError(IshaaraError):
     def __init__(self, code: str, detail: str) -> None:
         """Build a 502 error with the given code."""
         super().__init__(code, 502, "Video analysis failed", detail)
+
+
+class StorageError(IshaaraError):
+    """Raised when a file cannot be stored in the configured blob storage."""
+
+    def __init__(self, detail: str) -> None:
+        """Build a 502 ``storage_error`` error."""
+        super().__init__("storage_error", 502, "Storage failed", detail)

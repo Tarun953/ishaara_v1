@@ -15,6 +15,8 @@ from ishaara.clients.gemini_gateway import (
     GeminiGateway,
     GoogleGeminiGateway,
     JudgeGapsResult,
+    NarrationResult,
+    SpeechResult,
 )
 from ishaara.clients.youtube_metadata import YouTubeMetadataClient
 from ishaara.logging_config import configure_logging
@@ -118,13 +120,15 @@ class _Pass1ReplayGateway:
 
     async def write_narration(
         self, cues: Sequence[NarrationCue], narration_language: NarrationLanguage
-    ) -> dict[str, str]:
+    ) -> NarrationResult:
         """Delegate to the live gateway."""
         return await self._live_gateway.write_narration(cues, narration_language)
 
-    async def synthesize_speech(self, narration_text: str) -> bytes:
+    async def synthesize_speech(
+        self, narration_text: str, narration_language: NarrationLanguage
+    ) -> SpeechResult:
         """Delegate to the live gateway."""
-        return await self._live_gateway.synthesize_speech(narration_text)
+        return await self._live_gateway.synthesize_speech(narration_text, narration_language)
 
     async def answer_question(self, question: str, context_text: str) -> str:
         """Delegate to the live gateway."""

@@ -34,16 +34,34 @@ def parse_timestamp(raw_timestamp: str) -> float:
     return total_seconds
 
 
+def clip_relative_offset_seconds(timestamp_seconds: Sequence[float], window: ClipWindow) -> int:
+    """Return the offset to add so a window's timestamps become absolute video time.
+
+    The prompt asks for absolute time, but models sometimes answer relative to the clip.
+    If the window does not start at 0 and every timestamp is below the window length,
+    the timestamps are treated as clip-relative and ``window.start_seconds`` is the offset.
+    (A window whose timestamps are all absolute and fall in the first ``length`` seconds
+    would be misread, which can only happen when every item is in that narrow band.)
+
+    Args:
+        timestamp_seconds: Timestamps from one window, in seconds.
+        window: The window they came from.
+
+    Returns:
+        ``window.start_seconds`` for clip-relative timestamps, otherwise 0.
+    """
+    looks_clip_relative = (
+        window.start_seconds > 0
+        and len(timestamp_seconds) > 0
+        and all(seconds < window.length_seconds for seconds in timestamp_seconds)
+    )
+    return window.start_seconds if looks_clip_relative else 0
+
+
 def normalize_clip_timestamps(
     timestamp_seconds: Sequence[float], window: ClipWindow
 ) -> list[float | None]:
     """Convert a window's timestamps to absolute video time and drop strays.
-
-    The prompt asks for absolute time, but models sometimes answer relative to the clip.
-    If the window does not start at 0 and every timestamp is below the window length,
-    the timestamps are treated as clip-relative and ``window.start_seconds`` is added.
-    (A window whose timestamps are all absolute and fall in the first ``length`` seconds
-    would be misread, which can only happen when every moment is in that narrow band.)
 
     Args:
         timestamp_seconds: Timestamps from one window, in seconds.
@@ -53,12 +71,7 @@ def normalize_clip_timestamps(
         A list aligned with the input: the absolute time, or ``None`` when the time falls
         outside ``[window.start_seconds, window.end_seconds]``.
     """
-    looks_clip_relative = (
-        window.start_seconds > 0
-        and len(timestamp_seconds) > 0
-        and all(seconds < window.length_seconds for seconds in timestamp_seconds)
-    )
-    offset_seconds = window.start_seconds if looks_clip_relative else 0
+    offset_seconds = clip_relative_offset_seconds(timestamp_seconds, window)
     normalized: list[float | None] = []
     for seconds in timestamp_seconds:
         absolute_seconds = seconds + offset_seconds

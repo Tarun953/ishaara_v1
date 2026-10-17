@@ -1,28 +1,47 @@
 """The single place that talks to Gemini: a Protocol and its Google implementation."""
 
 import asyncio
+import base64
 import contextlib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
+import structlog
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import interactions
 from pydantic import ValidationError
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from ishaara.errors import GeminiError
 from ishaara.models.domain import NarrationCue, NarrationLanguage
-from ishaara.models.gemini_schemas import ChunkAnalysis, GapReport
+from ishaara.models.gemini_schemas import ChunkAnalysis, GapReport, NarrationBatch
 from ishaara.pipeline.chunking import ClipWindow
-from ishaara.pipeline.prompts import build_analysis_prompt, build_gap_judging_prompt
+from ishaara.pipeline.narration import lines_by_cue_id
+from ishaara.pipeline.prompts import (
+    build_analysis_prompt,
+    build_gap_judging_prompt,
+    build_narration_prompt,
+)
 from ishaara.pipeline.youtube_url import canonical_watch_url
 from ishaara.settings import Settings
 
+logger = structlog.get_logger()
+
+NARRATION_ATTEMPTS = 2
 ANALYSIS_TIMEOUT_SECONDS = 180.0
+TTS_TIMEOUT_SECONDS = 30.0
 MAX_ATTEMPTS = 3
+SPEECH_STYLE = "calm and clear"
+SPEECH_LANGUAGE_CODES = {NarrationLanguage.ENGLISH: "en-US", NarrationLanguage.HINDI: "hi-IN"}
 
 
 @dataclass(frozen=True)
@@ -59,6 +78,36 @@ class JudgeGapsResult:
     output_tokens: int
 
 
+@dataclass(frozen=True)
+class NarrationResult:
+    """The outcome of writing narration for a batch of cues.
+
+    Attributes:
+        lines: Spoken text keyed by ``cue_id``; every requested cue is present.
+        input_tokens: Input tokens billed across the calls made.
+        output_tokens: Output tokens billed across the calls made.
+    """
+
+    lines: dict[str, str]
+    input_tokens: int
+    output_tokens: int
+
+
+@dataclass(frozen=True)
+class SpeechResult:
+    """The outcome of one text-to-speech call.
+
+    Attributes:
+        wav_bytes: A complete WAV file.
+        input_tokens: Input tokens billed.
+        output_tokens: Output tokens billed.
+    """
+
+    wav_bytes: bytes
+    input_tokens: int
+    output_tokens: int
+
+
 @runtime_checkable
 class GeminiGateway(Protocol):
     """Everything the app needs from Gemini. Business logic depends only on this."""
@@ -73,12 +122,14 @@ class GeminiGateway(Protocol):
 
     async def write_narration(
         self, cues: Sequence[NarrationCue], narration_language: NarrationLanguage
-    ) -> dict[str, str]:
-        """Return spoken narration text keyed by ``cue_id`` (arrives in M4)."""
+    ) -> NarrationResult:
+        """Write one spoken line per cue."""
         ...
 
-    async def synthesize_speech(self, narration_text: str) -> bytes:
-        """Return WAV bytes for the text (arrives in M4)."""
+    async def synthesize_speech(
+        self, narration_text: str, narration_language: NarrationLanguage
+    ) -> SpeechResult:
+        """Speak the text and return it as WAV."""
         ...
 
     async def answer_question(self, question: str, context_text: str) -> str:
@@ -91,6 +142,27 @@ def _is_retryable(error: BaseException) -> bool:
     if isinstance(error, genai_errors.APIError):
         return error.code == 429 or error.code >= 500
     return isinstance(error, httpx.TransportError)
+
+
+def _log_retry(retry_state: RetryCallState) -> None:
+    """Log each retried Gemini call, so slow or flaky requests can be diagnosed."""
+    outcome = retry_state.outcome
+    error = outcome.exception() if outcome else None
+    logger.warning(
+        "gemini_retry",
+        model=retry_state.kwargs.get("model"),
+        attempt=retry_state.attempt_number,
+        error_type=type(error).__name__ if error else None,
+        error=str(error)[:200] if error else None,
+    )
+
+
+def _parse_or_none(model: type[NarrationBatch], raw_text: str | None) -> NarrationBatch | None:
+    """Parse JSON text into ``model``, returning ``None`` if it does not validate."""
+    try:
+        return model.model_validate_json(raw_text or "")
+    except ValidationError:
+        return None
 
 
 def _token_counts(interaction: interactions.Interaction) -> tuple[int, int]:
@@ -204,20 +276,13 @@ class GoogleGeminiGateway:
                 output_tokens,
             )
 
-    @retry(
-        retry=retry_if_exception(_is_retryable),
-        stop=stop_after_attempt(MAX_ATTEMPTS),
-        wait=wait_exponential(multiplier=1, max=10),
-        reraise=True,
-    )
     async def _create_json_interaction(
         self, model: str, input_items: list[dict[str, Any]], response_schema: dict[str, Any]
     ) -> interactions.Interaction:
-        """Make one JSON-schema interaction (blocking SDK call run in a thread)."""
-        interaction = await asyncio.to_thread(
-            self._client.interactions.create,
+        """Make one JSON-schema interaction."""
+        return await self._create_interaction(
             model=model,
-            input=input_items,
+            input_items=input_items,
             response_format={
                 "type": "text",
                 "mime_type": "application/json",
@@ -225,19 +290,116 @@ class GoogleGeminiGateway:
             },
             timeout=ANALYSIS_TIMEOUT_SECONDS,
         )
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(MAX_ATTEMPTS),
+        wait=wait_exponential(multiplier=1, max=10),
+        before_sleep=_log_retry,
+        reraise=True,
+    )
+    async def _create_interaction(
+        self,
+        model: str,
+        input_items: list[dict[str, Any]],
+        response_format: dict[str, Any],
+        timeout: float,
+        generation_config: dict[str, Any] | None = None,
+    ) -> interactions.Interaction:
+        """Make one interaction (blocking SDK call run in a thread), retrying 429/5xx."""
+        request: dict[str, Any] = {
+            "model": model,
+            "input": input_items,
+            "response_format": response_format,
+            "timeout": timeout,
+        }
+        if generation_config:
+            request["generation_config"] = generation_config
+        interaction = await asyncio.to_thread(self._client.interactions.create, **request)
         if not isinstance(interaction, interactions.Interaction):
             raise TypeError("Expected a unary Interaction, got a stream")
         return interaction
 
     async def write_narration(
         self, cues: Sequence[NarrationCue], narration_language: NarrationLanguage
-    ) -> dict[str, str]:
-        """Not implemented until M4."""
-        raise NotImplementedError("write_narration arrives in M4")
+    ) -> NarrationResult:
+        """Write one spoken line per cue, retrying once if the batch is incomplete.
 
-    async def synthesize_speech(self, narration_text: str) -> bytes:
-        """Not implemented until M4."""
-        raise NotImplementedError("synthesize_speech arrives in M4")
+        Args:
+            cues: Cues to describe.
+            narration_language: Language of the lines.
+
+        Returns:
+            A line for every cue and the tokens billed.
+
+        Raises:
+            GeminiError: If the call fails, or two attempts both miss a cue.
+        """
+        if not cues:
+            return NarrationResult({}, 0, 0)
+        prompt = build_narration_prompt(cues, narration_language)
+        expected_cue_ids = [cue.cue_id for cue in cues]
+        input_tokens = output_tokens = 0
+        for attempt in range(NARRATION_ATTEMPTS):
+            with _gemini_errors():
+                interaction = await self._create_json_interaction(
+                    model=self._settings.text_model,
+                    input_items=[{"type": "text", "text": prompt}],
+                    response_schema=NarrationBatch.model_json_schema(),
+                )
+                call_input, call_output = _token_counts(interaction)
+                input_tokens, output_tokens = input_tokens + call_input, output_tokens + call_output
+                batch = _parse_or_none(NarrationBatch, interaction.output_text)
+            lines = lines_by_cue_id(batch, expected_cue_ids) if batch else None
+            if lines is not None:
+                return NarrationResult(lines, input_tokens, output_tokens)
+            logger.warning("narration_incomplete", attempt=attempt + 1, cues=len(cues))
+        raise GeminiError(
+            "gemini_invalid_response", "Gemini did not return one narration line for every cue."
+        )
+
+    async def synthesize_speech(
+        self, narration_text: str, narration_language: NarrationLanguage
+    ) -> SpeechResult:
+        """Speak ``narration_text`` and return the WAV file.
+
+        Args:
+            narration_text: The line to speak.
+            narration_language: Language of the line, used to pick the speech language.
+
+        Returns:
+            WAV bytes and the tokens billed.
+
+        Raises:
+            GeminiError: If the call fails or returns no audio.
+        """
+        with _gemini_errors():
+            interaction = await self._create_interaction(
+                model=self._settings.tts_model,
+                input_items=[
+                    {
+                        "type": "text",
+                        "text": narration_text,
+                        "annotations": [{"type": "speech_metadata", "style": SPEECH_STYLE}],
+                    }
+                ],
+                response_format={"type": "audio"},
+                generation_config={
+                    "speech_config": [
+                        {
+                            "voice": self._settings.tts_voice,
+                            "language": SPEECH_LANGUAGE_CODES[narration_language],
+                        }
+                    ]
+                },
+                timeout=TTS_TIMEOUT_SECONDS,
+            )
+        audio = interaction.output_audio
+        if audio is None or not audio.data:
+            raise GeminiError("gemini_invalid_response", "Gemini returned no audio.")
+        wav_bytes = audio.data if isinstance(audio.data, bytes) else base64.b64decode(audio.data)
+        input_tokens, output_tokens = _token_counts(interaction)
+        return SpeechResult(wav_bytes, input_tokens, output_tokens)
 
     async def answer_question(self, question: str, context_text: str) -> str:
         """Not implemented until M6."""

@@ -1,14 +1,33 @@
+import io
+import wave
 from collections.abc import Iterator, Sequence
 
 import pytest
 from fastapi.testclient import TestClient
 
-from ishaara.clients.gemini_gateway import AnalyzeClipResult, JudgeGapsResult
+from ishaara.clients.gemini_gateway import (
+    AnalyzeClipResult,
+    JudgeGapsResult,
+    NarrationResult,
+    SpeechResult,
+)
+from ishaara.errors import StorageError
 from ishaara.main import create_app
 from ishaara.models.api_models import YouTubeVideoMetadata
 from ishaara.models.domain import NarrationCue, NarrationLanguage, SpeechCoverage
 from ishaara.models.gemini_schemas import ChunkAnalysis, GapJudgement, GapReport
 from ishaara.pipeline.chunking import ClipWindow
+
+
+def make_wav(duration_seconds: float = 1.0, sample_rate: int = 24000) -> bytes:
+    """Build a silent mono 16-bit WAV file of the given length."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"\x00\x00" * int(sample_rate * duration_seconds))
+    return buffer.getvalue()
 
 
 class FakeGeminiGateway:
@@ -49,14 +68,38 @@ class FakeGeminiGateway:
 
     async def write_narration(
         self, cues: Sequence[NarrationCue], narration_language: NarrationLanguage
-    ) -> dict[str, str]:
-        return {cue.cue_id: cue.board_description for cue in cues}
+    ) -> NarrationResult:
+        lines = {cue.cue_id: f"On the board: {cue.board_description}" for cue in cues}
+        return NarrationResult(lines, 10, 5)
 
-    async def synthesize_speech(self, narration_text: str) -> bytes:
-        return b"RIFF"
+    async def synthesize_speech(
+        self, narration_text: str, narration_language: NarrationLanguage
+    ) -> SpeechResult:
+        return SpeechResult(make_wav(), 3, 7)
 
     async def answer_question(self, question: str, context_text: str) -> str:
         return "fake answer"
+
+
+class FakeBlobStorage:
+    """Keeps uploads in memory; can be told to fail specific uploads."""
+
+    def __init__(self, fail_private: bool = False) -> None:
+        self.public: dict[str, bytes] = {}
+        self.private: dict[str, bytes] = {}
+        self.fail_private = fail_private
+
+    async def upload_public(
+        self, path: str, data: bytes, content_type: str, cache_control: str
+    ) -> str:
+        self.public[path] = data
+        return f"https://audio.test/{path}"
+
+    async def upload_private(self, path: str, data: bytes, content_type: str) -> str:
+        if self.fail_private:
+            raise StorageError("private storage is down")
+        self.private[path] = data
+        return path
 
 
 class FakeMetadataSource:

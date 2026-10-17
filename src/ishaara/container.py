@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from ishaara.clients.blob_storage_factory import build_blob_storage
 from ishaara.clients.gemini_gateway import GoogleGeminiGateway
 from ishaara.clients.repositories import UsageRepository, VideoRepository
 from ishaara.clients.repository_factory import build_repositories
@@ -48,7 +49,7 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
 
     Args:
         settings: Application settings.
-        http_client: Shared HTTP client for the YouTube Data API.
+        http_client: Shared HTTP client for the YouTube Data API and Supabase Storage.
 
     Returns:
         A container using the configured database backend and the real Gemini gateway.
@@ -56,7 +57,11 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
     repositories = build_repositories(settings)
     metadata_client = YouTubeMetadataClient(settings.youtube_api_key, http_client)
     pipeline = VideoPipeline(
-        repositories.videos, metadata_client, GoogleGeminiGateway(settings), settings
+        repositories.videos,
+        metadata_client,
+        GoogleGeminiGateway(settings),
+        build_blob_storage(settings, http_client),
+        settings,
     )
     job_runner = JobRunner(repositories.videos, pipeline.run)
     video_service = VideoService(

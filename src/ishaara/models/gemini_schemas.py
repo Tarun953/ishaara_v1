@@ -61,3 +61,18 @@ class GapReport(BaseModel):
     """Pass 2 output: one judgement per visual event."""
 
     judgements: list[GapJudgement]
+
+
+class NarrationLine(BaseModel):
+    """The spoken description for one cue."""
+
+    cue_id: str = Field(description="The cue id from the input, copied exactly.")
+    narration_text: str = Field(
+        description="Spoken description, at most 30 words, in the target language."
+    )
+
+
+class NarrationBatch(BaseModel):
+    """Narration output: exactly one line per input cue."""
+
+    lines: list[NarrationLine]
