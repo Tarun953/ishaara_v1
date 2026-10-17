@@ -45,3 +45,29 @@ def test_readme_documents_every_setting() -> None:
     missing = sorted(name for name in SETTING_NAMES if f"`{name}`" not in readme)
 
     assert missing == []
+
+
+def test_environment_templates_only_use_known_settings() -> None:
+    for template in (".env.local.example", ".env.prod.example"):
+        lines = (ROOT / template).read_text(encoding="utf-8").splitlines()
+        names = {line.split("=", 1)[0] for line in lines if re.match(r"^[A-Z_]+=", line)}
+
+        assert names - SETTING_NAMES - TEST_ONLY_NAMES == set(), f"unknown name in {template}"
+
+
+def test_the_production_template_is_safe_to_deploy_and_holds_no_secrets() -> None:
+    from ishaara.deploy_config import SECRET_NAMES
+
+    lines = (ROOT / ".env.prod.example").read_text(encoding="utf-8").splitlines()
+    names = {line.split("=", 1)[0] for line in lines if re.match(r"^[A-Z_]+=", line)}
+
+    assert names & set(SECRET_NAMES) == set()
+    assert "AUTH_BYPASS_UID" not in names
+    assert "ENVIRONMENT=production" in lines
+
+
+def test_every_environment_file_is_ignored_by_git_except_the_templates() -> None:
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    assert ".env" in gitignore and ".env.*" in gitignore
+    assert "!.env.example" in gitignore and "!.env.*.example" in gitignore

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import httpx
 import structlog
+from dotenv import dotenv_values
 
 from ishaara.clients.gemini_gateway import (
     AnalyzeClipResult,
@@ -21,6 +22,7 @@ from ishaara.clients.gemini_gateway import (
 )
 from ishaara.clients.youtube_metadata import YouTubeMetadataClient
 from ishaara.container import build_container
+from ishaara.deploy_config import build_cloud_run_config
 from ishaara.logging_config import configure_logging
 from ishaara.models.domain import NarrationCue, NarrationLanguage
 from ishaara.models.gemini_schemas import ChunkAnalysis
@@ -29,7 +31,7 @@ from ishaara.pipeline.orchestrator import WindowResult, analyze_windows, merge_w
 from ishaara.pipeline.youtube_url import parse_youtube_video_id
 from ishaara.preprocess import process_videos
 from ishaara.services.video_service import validate_video_for_processing
-from ishaara.settings import Settings, get_settings
+from ishaara.settings import Settings, env_files, get_settings
 
 FIXTURES_DIRECTORY = Path("tests/fixtures")
 SECONDS_PER_MINUTE = 60
@@ -78,6 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=["en"],
         help="Narration languages to produce for every link (default: en).",
     )
+    deploy_env = subcommands.add_parser(
+        "deploy-env",
+        help="Print the project id and the Cloud Run --set-env-vars / --set-secrets values.",
+    )
+    deploy_env.add_argument("--env-name", default="prod", help="Env file suffix (default: prod).")
     return parser
 
 
@@ -212,6 +219,20 @@ async def _process(args: argparse.Namespace, settings: Settings) -> int:
     return 1 if any(outcome.status == "failed" for outcome in outcomes) else 0
 
 
+def _print_deploy_env(env_name: str) -> None:
+    """Print three lines: project id, ``--set-env-vars`` value, ``--set-secrets`` value."""
+    values: dict[str, str | None] = {}
+    for env_file in env_files(env_name):
+        values.update(dotenv_values(env_file))
+    try:
+        config = build_cloud_run_config(values)
+    except ValueError as error:
+        raise SystemExit(f"Cannot build the deploy configuration: {error}") from error
+    sys.stdout.write(
+        f"{config.project_id}\n{config.env_vars_argument}\n{config.secrets_argument}\n"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Run the ``ishaara`` command-line tool.
 
@@ -224,6 +245,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     settings = get_settings()
     configure_logging(settings.log_level, stream=sys.stderr)
+    if args.command == "deploy-env":
+        _print_deploy_env(args.env_name)
+        return
     if args.command == "process":
         exit_code = asyncio.run(_process(args, settings))
         if exit_code:

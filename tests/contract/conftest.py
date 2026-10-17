@@ -16,6 +16,15 @@ from psycopg import sql
 from ishaara.clients.memory_repository import InMemoryUsageRepository, InMemoryVideoRepository
 from ishaara.clients.repositories import UsageRepository, VideoRepository
 from ishaara.models.domain import NarrationLanguage, VideoRecord, VideoStatus
+from ishaara.settings import env_files
+
+
+def _local_env_value(name: str) -> str | None:
+    """Read a variable from the local env files (.env overlaid by .env.local)."""
+    merged: dict[str, str | None] = {}
+    for env_file in env_files("local"):
+        merged.update(dotenv_values(env_file))
+    return merged.get(name)
 
 
 class FakeClock:
@@ -104,9 +113,7 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
                 for name in ("videos", "users"):
                     await client.recursive_delete(client.collection(f"{prefix}{name}"))
     elif request.param == "supabase":
-        db_url = os.environ.get("SUPABASE_TEST_DB_URL") or dotenv_values(".env").get(
-            "SUPABASE_TEST_DB_URL"
-        )
+        db_url = os.environ.get("SUPABASE_TEST_DB_URL") or _local_env_value("SUPABASE_TEST_DB_URL")
         if not db_url:
             pytest.skip("Set SUPABASE_TEST_DB_URL to run the Supabase contract tests")
         from ishaara.clients.supabase_repository import (

@@ -1,21 +1,47 @@
 """Typed application settings loaded from environment variables."""
 
+import os
+import re
 from functools import lru_cache
 from typing import Annotated, Literal
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+ENV_NAME_VARIABLE = "ISHAARA_ENV"
+DEFAULT_ENV_NAME = "local"
+_ENV_NAME_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,32}")
+
+
+def env_files(env_name: str | None = None) -> tuple[str, ...]:
+    """Return the env files to load, shared first so the environment's file overrides it.
+
+    Args:
+        env_name: Environment name such as ``local`` or ``prod``. Defaults to the
+            ``ISHAARA_ENV`` environment variable, or ``local``.
+
+    Returns:
+        ``(".env", ".env.<name>")``. Missing files are simply skipped when loading.
+
+    Raises:
+        ValueError: If the name contains anything but letters, digits, ``_`` and ``-``.
+    """
+    name = env_name if env_name is not None else os.environ.get(ENV_NAME_VARIABLE, DEFAULT_ENV_NAME)
+    if not _ENV_NAME_PATTERN.fullmatch(name):
+        raise ValueError(f"{ENV_NAME_VARIABLE} must be letters, digits, '_' or '-', got {name!r}")
+    return (".env", f".env.{name}")
+
 
 class Settings(BaseSettings):
     """All runtime configuration for the Ishaara backend.
 
-    Values come from environment variables (and a local ``.env`` file). Secrets and
+    Values come from environment variables, then the env files from ``env_files()``
+    (``.env``, overridden by ``.env.<ISHAARA_ENV>``). Secrets and
     resource names default to empty strings so the app can start without them; code
     that needs them must check for emptiness.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=env_files(), extra="ignore")
 
     environment: Literal["local", "production"] = "local"
     gemini_api_key: str = ""

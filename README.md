@@ -29,19 +29,33 @@ Requirements: Python 3.12 and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync
-cp .env.example .env     # then fill in GEMINI_API_KEY and YOUTUBE_API_KEY
+cp .env.example .env     # shared keys: fill in GEMINI_API_KEY and YOUTUBE_API_KEY
 AUTH_BYPASS_UID=dev-user uv run uvicorn ishaara.main:create_app --factory --reload
 curl localhost:8000/healthz
 ```
 
-With the defaults nothing needs a cloud account: videos are kept in memory and audio is written to
+With just that, nothing needs a cloud account: videos are kept in memory and audio is written to
 `.local_storage/` and served at `/media`. `AUTH_BYPASS_UID` makes every request act as that user with
 no Firebase token. It works only with `ENVIRONMENT=local` and is refused in production.
 
+To develop against real services, add `.env.local` (see below).
+
 ## Configuration
 
-Settings come from environment variables (or `.env`). Secrets must never be committed; `.env` is
-git-ignored.
+Settings are layered, later sources winning: the shared **`.env`**, then **`.env.<name>`** for the
+environment chosen by `ISHAARA_ENV` (default `local`), then real environment variables.
+
+| File | Holds | Used when |
+| --- | --- | --- |
+| `.env` | Keys, model names, limits shared by every environment | Always |
+| `.env.local` | Local development: Supabase database and storage, `AUTH_BYPASS_UID` | `ISHAARA_ENV` unset or `local` |
+| `.env.prod` | Production: Firestore, Cloud Storage, buckets, CORS origins. **No secrets** | `ISHAARA_ENV=prod` (the `process` command, `scripts/deploy.sh`) |
+
+Copy `.env.local.example` and `.env.prod.example` to start; `.env.example` lists every setting with its
+default. All `.env*` files except the `*.example` templates are git-ignored and excluded from the Docker
+image. A missing file is skipped, so a single `.env` still works. The deployed service never reads
+these files: `scripts/deploy.sh` passes plain settings as Cloud Run variables and secrets by name from
+Secret Manager. On start the app logs which environment, database and storage it is using.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -87,8 +101,8 @@ git-ignored.
 - **Audio and transcripts** (`STORAGE_BACKEND`): `local` writes files and serves them at `/media`.
   `supabase` and `gcs` need a public audio bucket and a private transcript bucket.
 
-The in-memory, local, Supabase database, Supabase Storage and Firestore adapters have been run against
-real services. The Google Cloud Storage adapter is tested with fakes only.
+Every adapter has now been run against real services: Supabase (database and storage), Firestore, and
+Google Cloud Storage.
 
 ## Using the API
 
@@ -123,14 +137,16 @@ curl $BASE/v1/me/videos -H "$AUTH"
 
 ```bash
 uv run ishaara analyze <youtube_url> --language en --max-minutes 3 --duration-seconds 180
-uv run ishaara process <youtube_url> [<youtube_url> ...] --languages en hi
+ISHAARA_ENV=prod uv run ishaara process <youtube_url> [<youtube_url> ...] --languages en hi
+uv run ishaara deploy-env        # prints what scripts/deploy.sh will send to Cloud Run (no secret values)
+scripts/deploy.sh                # deploy to Cloud Run (DRY_RUN=1 prints the command instead)
 ```
 
 - `analyze` prints the merged cues as JSON, for prompt tuning. It needs no database. `--save-fixtures`
   writes the raw Gemini responses to `tests/fixtures/`, and `--from-fixtures` reuses saved pass 1
   output and re-runs only the cheap gap-judging step.
-- `process` fully processes videos into the configured database and storage, so a demo never waits.
-  See [`docs/DEPLOY.md`](docs/DEPLOY.md).
+- `process` fully processes videos into the database and storage of the chosen environment, so a demo
+  never waits. Use `ISHAARA_ENV=prod` to fill the production backends. See [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Development
 
@@ -144,7 +160,7 @@ The test suite uses fakes for Gemini, YouTube and storage and makes no network c
 repository contract tests, which run against every backend you configure and skip the rest:
 
 ```bash
-SUPABASE_TEST_DB_URL=... uv run pytest -q -k supabase     # uses a throwaway schema and drops it
+uv run pytest -q -k supabase     # needs SUPABASE_TEST_DB_URL in .env.local; uses a throwaway schema
 FIRESTORE_EMULATOR_HOST=localhost:8080 uv run pytest -q -k firestore       # an emulator
 FIRESTORE_TEST_PROJECT=<project-id> uv run pytest -q -k firestore           # a real project: throwaway
                                                                            # contract_test_* collections, deleted after
@@ -158,6 +174,8 @@ docker run --rm -p 8080:8080 ishaara-api                       # local mode, in-
 docker run --rm -e ENVIRONMENT=production ishaara-api          # exits: production refuses unsafe defaults
 scripts/smoke_test.sh http://localhost:8080
 ```
+
+(`.env*` files are not copied into the image; settings reach the container as environment variables.)
 
 ### Layout
 
@@ -180,4 +198,4 @@ tests/                unit, API and repository contract tests
 - Gemini's speech service can stop responding (rate limits); videos then finish with text-only cues
   and questions return text without audio. See `docs/DECISIONS.md`.
 - Which events become cues varies between runs of the same video.
-- Nothing has been deployed to Cloud Run yet.
+- The Cloud Run deploy has been prepared (project, service account, buckets, secrets) but not yet run.

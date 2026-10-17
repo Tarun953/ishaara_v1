@@ -7,16 +7,16 @@ instance (otherwise a job is frozen as soon as its request returns).
 > **What has and has not been verified.** The Docker image builds, starts, answers `/healthz`,
 > applies the request limits and shuts down cleanly on SIGTERM. The Supabase database and Supabase
 > Storage adapters and the **Firestore adapter** have run against real services (Firestore: the 13
-> repository contract tests passed against the real `ishaara-v1` database). **Nothing has been
-> deployed to Cloud Run yet**, and the Google Cloud Storage adapter has only run against fakes, so
-> check it with a real upload during the deploy.
+> repository contract tests passed against the real `ishaara-v1` database) and the **Google Cloud
+> Storage adapter** (public and private upload, read-back and the public/private access rules were
+> checked on the real buckets). **Nothing has been deployed to Cloud Run yet.**
 
 ## 1. Choose your backends
 
 | | Database (`DATABASE_BACKEND`) | Audio and transcripts (`STORAGE_BACKEND`) |
 | --- | --- | --- |
 | **Recommended: Supabase** | `supabase`: needs the tables from `supabase/schema.sql` and the **session pooler** URL | `supabase`: a public bucket for audio, a private bucket for transcripts, the **secret** key |
-| Google | `firestore`: verified against a real database; free-tier quotas are small | `gcs`: a public-read bucket and a private bucket (not yet run against real GCS) |
+| Google | `firestore`: verified against a real database; free-tier quotas are small | `gcs`: a public-read bucket and a private bucket (verified on real buckets) |
 
 You can mix them. Everything below shows the Supabase variant first and the Google differences after.
 
@@ -59,18 +59,35 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
 ```
 
-**Secrets.** These commands read the values from your local `.env` and send them straight to
-Secret Manager without printing them. Run them from the repository root.
+**Secrets.** These commands read the values from your local env files and send them straight to
+Secret Manager without printing them. Run them from the repository root. `secret <name> <VAR> [env]`
+reads `.env` overlaid by `.env.<env>` (default `prod`).
 
 ```bash
-secret() { # secret <name> <ENV_VAR>
-  uv run python -c "import sys; from dotenv import dotenv_values; sys.stdout.write(dotenv_values('.env')['$2'])" \
-    | gcloud secrets create "$1" --data-file=-
+secret() {
+  uv run python -c "
+import sys
+from dotenv import dotenv_values
+from ishaara.settings import env_files
+values = {}
+for env_file in env_files('${3:-prod}'):
+    values.update(dotenv_values(env_file))
+sys.stdout.write(values['$2'])" | gcloud secrets create "$1" --data-file=-
 }
 secret gemini-api-key       GEMINI_API_KEY
 secret youtube-api-key      YOUTUBE_API_KEY
-secret supabase-service-key SUPABASE_SERVICE_KEY   # the SECRET key, never the publishable one
-secret supabase-db-url      SUPABASE_DB_URL        # session-pooler string; add this line to .env first (same value as SUPABASE_TEST_DB_URL is fine)
+# Only if you deploy with Supabase (their values live in .env.local):
+secret supabase-service-key SUPABASE_SERVICE_KEY local   # the SECRET key, never the publishable one
+secret supabase-db-url      SUPABASE_DB_URL      local   # the session-pooler connection string
+```
+
+Let the service account read each secret:
+
+```bash
+for NAME in gemini-api-key youtube-api-key; do
+  gcloud secrets add-iam-policy-binding $NAME --member=serviceAccount:$SA \
+    --role=roles/secretmanager.secretAccessor
+done
 ```
 
 Rotate a secret later with `gcloud secrets versions add <name> --data-file=-`, then redeploy.
@@ -97,22 +114,27 @@ gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$SA -
 
 ## 4. Deploy
 
-`ALLOWED_ORIGINS` contains commas, so the variables are passed with a custom delimiter (`^@^`).
-
-**Supabase for both database and storage:**
+The production settings live in `.env.prod` (no secrets; see `.env.prod.example`), layered over the
+shared `.env`. `scripts/deploy.sh` turns them into the `gcloud run deploy` command: plain settings
+become environment variables, and the API keys are referenced by their Secret Manager names. Look at
+it first, then run it:
 
 ```bash
-gcloud run deploy ishaara-api --source . --region $REGION --service-account $SA \
-  --no-cpu-throttling --min-instances 1 --max-instances 2 \
-  --cpu 1 --memory 1Gi --concurrency 40 --timeout 300 \
-  --allow-unauthenticated \
-  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SUPABASE_DB_URL=supabase-db-url:latest,SUPABASE_SERVICE_KEY=supabase-service-key:latest \
-  --set-env-vars "^@^ENVIRONMENT=production@GCP_PROJECT_ID=$PROJECT_ID@DATABASE_BACKEND=supabase@STORAGE_BACKEND=supabase@SUPABASE_URL=https://<project-ref>.supabase.co@AUDIO_BUCKET=<public-bucket>@TRANSCRIPT_BUCKET=<private-bucket>@ALLOWED_ORIGINS=https://<project>.web.app,http://localhost:5173"
+DRY_RUN=1 scripts/deploy.sh      # prints the exact command, nothing is changed
+scripts/deploy.sh                # builds in Cloud Build and deploys to Cloud Run
 ```
 
-**Google variant:** use `DATABASE_BACKEND=firestore@STORAGE_BACKEND=gcs`,
-`AUDIO_BUCKET=$PROJECT_ID-narration-audio@TRANSCRIPT_BUCKET=$PROJECT_ID-transcripts`, and drop the
-three `SUPABASE_*` entries.
+The command line it builds has these fixed parts: region `asia-south1`, service account
+`ishaara-api@<project>.iam.gserviceaccount.com`, `--no-cpu-throttling --min-instances 1
+--max-instances 2 --cpu 1 --memory 1Gi --concurrency 40 --timeout 300 --allow-unauthenticated`.
+`uv run ishaara deploy-env` prints just the project id, the `--set-env-vars` value and the
+`--set-secrets` value, so you can inspect them. The variable list uses a custom delimiter (`^@^`)
+because `ALLOWED_ORIGINS` contains commas. It also checks the values the way the app will: it refuses
+to produce a command for a configuration the app would not start with.
+
+For Supabase instead of Google backends, set `DATABASE_BACKEND=supabase`, `STORAGE_BACKEND=supabase`,
+`SUPABASE_URL` and the bucket names in `.env.prod`; the script then also references the
+`supabase-db-url` and `supabase-service-key` secrets.
 
 Notes:
 
@@ -120,18 +142,24 @@ Notes:
   Firebase ID token.
 - The app **refuses to start** in production with the in-memory database, local file storage or an
   auth bypass, so a mistake in these variables fails the deploy instead of silently losing data.
+- `--set-env-vars` replaces the service's whole variable list on every deploy, so the env files stay
+  the single source of truth.
 - `--timeout 300` applies to HTTP requests, not to background jobs.
 - `--min-instances 1` with `--no-cpu-throttling` is billed continuously. See "Stopping the cost".
 
 ## 5. Pre-process the demo videos
 
 So that the demo never waits for Gemini, process the videos once, into the same database and storage
-the service uses. This runs on your machine against the production backends (set
-`DATABASE_BACKEND=supabase`, `SUPABASE_DB_URL` and `STORAGE_BACKEND=supabase` in `.env`):
+the deployed service uses. Run it on your machine with the **production** environment selected, which
+loads `.env` and `.env.prod` (Firestore and Cloud Storage) and uses your Application Default
+Credentials (`gcloud auth application-default login`):
 
 ```bash
-uv run ishaara process https://youtu.be/<id-1> https://youtu.be/<id-2> https://youtu.be/<id-3> --languages en hi
+ISHAARA_ENV=prod uv run ishaara process https://youtu.be/<id-1> https://youtu.be/<id-2> https://youtu.be/<id-3> --languages en hi
 ```
+
+The app logs `settings_loaded` with the environment and backends at start, so you can see where it is
+writing. Without `ISHAARA_ENV=prod` the same command writes to your local (Supabase) environment.
 
 It prints one JSON line per video and language (`ready`, `cached` or `failed`, with the number of
 cues and how many have audio) and exits non-zero if anything failed. It is safe to re-run: a video
