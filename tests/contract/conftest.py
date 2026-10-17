@@ -69,8 +69,12 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
         yield Backend(InMemoryVideoRepository(clock), InMemoryUsageRepository(clock), clock)
     elif request.param == "firestore":
         emulator_host = os.environ.get("FIRESTORE_EMULATOR_HOST")
-        if not emulator_host:
-            pytest.skip("Set FIRESTORE_EMULATOR_HOST to run the Firestore contract tests")
+        real_project = os.environ.get("FIRESTORE_TEST_PROJECT")
+        if not emulator_host and not real_project:
+            pytest.skip(
+                "Set FIRESTORE_EMULATOR_HOST (emulator) or FIRESTORE_TEST_PROJECT (a real "
+                "project, using throwaway collections) to run the Firestore contract tests"
+            )
         from google.cloud import firestore
 
         from ishaara.clients.firestore_repository import (
@@ -78,14 +82,27 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
             FirestoreVideoRepository,
         )
 
-        project = "ishaara-contract-tests"
-        httpx.delete(
-            f"http://{emulator_host}/emulator/v1/projects/{project}/databases/(default)/documents"
-        )
+        if emulator_host:
+            project = "ishaara-contract-tests"
+            httpx.delete(
+                f"http://{emulator_host}/emulator/v1/projects/{project}/databases/(default)/documents"
+            )
+            prefix = ""
+        else:
+            # A real database: use collections no other data can share, and delete them after.
+            project = str(real_project)
+            prefix = f"contract_test_{uuid.uuid4().hex[:8]}_"
         client = firestore.AsyncClient(project=project)
-        yield Backend(
-            FirestoreVideoRepository(client, clock), FirestoreUsageRepository(client, clock), clock
-        )
+        try:
+            yield Backend(
+                FirestoreVideoRepository(client, clock, prefix),
+                FirestoreUsageRepository(client, clock, prefix),
+                clock,
+            )
+        finally:
+            if prefix:
+                for name in ("videos", "users"):
+                    await client.recursive_delete(client.collection(f"{prefix}{name}"))
     elif request.param == "supabase":
         db_url = os.environ.get("SUPABASE_TEST_DB_URL") or dotenv_values(".env").get(
             "SUPABASE_TEST_DB_URL"

@@ -87,8 +87,8 @@ git-ignored.
 - **Audio and transcripts** (`STORAGE_BACKEND`): `local` writes files and serves them at `/media`.
   `supabase` and `gcs` need a public audio bucket and a private transcript bucket.
 
-Only the in-memory, local, Supabase database and Supabase Storage adapters have been run against
-real services. The Firestore and Google Cloud Storage adapters are tested with fakes only.
+The in-memory, local, Supabase database, Supabase Storage and Firestore adapters have been run against
+real services. The Google Cloud Storage adapter is tested with fakes only.
 
 ## Using the API
 
@@ -145,7 +145,9 @@ repository contract tests, which run against every backend you configure and ski
 
 ```bash
 SUPABASE_TEST_DB_URL=... uv run pytest -q -k supabase     # uses a throwaway schema and drops it
-FIRESTORE_EMULATOR_HOST=localhost:8080 uv run pytest -q -k firestore
+FIRESTORE_EMULATOR_HOST=localhost:8080 uv run pytest -q -k firestore       # an emulator
+FIRESTORE_TEST_PROJECT=<project-id> uv run pytest -q -k firestore           # a real project: throwaway
+                                                                           # contract_test_* collections, deleted after
 ```
 
 ### Docker

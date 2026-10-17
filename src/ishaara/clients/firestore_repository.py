@@ -1,7 +1,9 @@
 """Firestore implementations of the storage ports.
 
 Layout: ``videos/{video_key}``, ``users/{uid}/submissions/{video_key}`` and
-``users/{uid}/daily_usage/{YYYY-MM-DD}``. Only operations that must be atomic use
+``users/{uid}/daily_usage/{YYYY-MM-DD}``. An optional collection prefix (used by tests that run
+against a real database) turns ``videos`` into ``<prefix>videos`` and ``users`` into
+``<prefix>users``. Only operations that must be atomic use
 transactions; single-writer updates are plain partial writes to save quota.
 """
 
@@ -36,19 +38,24 @@ class FirestoreVideoRepository:
     Args:
         client: An async Firestore client.
         clock: Source of the current time.
+        collection_prefix: Prepended to the collection names; empty in production.
     """
 
-    def __init__(self, client: firestore.AsyncClient, clock: Clock = utc_now) -> None:
-        """Store the client and clock."""
+    def __init__(
+        self, client: firestore.AsyncClient, clock: Clock = utc_now, collection_prefix: str = ""
+    ) -> None:
+        """Store the client, clock and collection names."""
         self._client = client
         self._clock = clock
+        self._videos_collection = f"{collection_prefix}{VIDEOS_COLLECTION}"
+        self._users_collection = f"{collection_prefix}{USERS_COLLECTION}"
 
     def _video_ref(self, video_key: str) -> firestore.AsyncDocumentReference:
-        return self._client.collection(VIDEOS_COLLECTION).document(video_key)
+        return self._client.collection(self._videos_collection).document(video_key)
 
     def _submissions(self, uid: str) -> firestore.AsyncCollectionReference:
         submissions: firestore.AsyncCollectionReference = (
-            self._client.collection(USERS_COLLECTION).document(uid).collection("submissions")
+            self._client.collection(self._users_collection).document(uid).collection("submissions")
         )
         return submissions
 
@@ -158,18 +165,22 @@ class FirestoreUsageRepository:
     Args:
         client: An async Firestore client.
         clock: Source of the current time; the UTC date selects the counter document.
+        collection_prefix: Prepended to the collection name; empty in production.
     """
 
-    def __init__(self, client: firestore.AsyncClient, clock: Clock = utc_now) -> None:
-        """Store the client and clock."""
+    def __init__(
+        self, client: firestore.AsyncClient, clock: Clock = utc_now, collection_prefix: str = ""
+    ) -> None:
+        """Store the client, clock and collection name."""
         self._client = client
         self._clock = clock
+        self._users_collection = f"{collection_prefix}{USERS_COLLECTION}"
 
     async def increment_and_check(self, uid: str, field: DailyUsageField, limit: int) -> bool:
         """Count one use unless today's limit is reached."""
         day = self._clock().date().isoformat()
         usage_ref = (
-            self._client.collection(USERS_COLLECTION)
+            self._client.collection(self._users_collection)
             .document(uid)
             .collection("daily_usage")
             .document(day)

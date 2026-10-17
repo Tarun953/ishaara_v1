@@ -6,16 +6,17 @@ instance (otherwise a job is frozen as soon as its request returns).
 
 > **What has and has not been verified.** The Docker image builds, starts, answers `/healthz`,
 > applies the request limits and shuts down cleanly on SIGTERM. The Supabase database and Supabase
-> Storage adapters have run against real Supabase projects. **Nothing has been deployed to Cloud
-> Run yet**, and the Firestore and Google Cloud Storage adapters have never run against the real
-> services (only against fakes), so treat those as unproven.
+> Storage adapters and the **Firestore adapter** have run against real services (Firestore: the 13
+> repository contract tests passed against the real `ishaara-v1` database). **Nothing has been
+> deployed to Cloud Run yet**, and the Google Cloud Storage adapter has only run against fakes, so
+> check it with a real upload during the deploy.
 
 ## 1. Choose your backends
 
 | | Database (`DATABASE_BACKEND`) | Audio and transcripts (`STORAGE_BACKEND`) |
 | --- | --- | --- |
 | **Recommended: Supabase** | `supabase`: needs the tables from `supabase/schema.sql` and the **session pooler** URL | `supabase`: a public bucket for audio, a private bucket for transcripts, the **secret** key |
-| Google | `firestore`: free-tier quotas are small | `gcs`: a public-read bucket and a private bucket |
+| Google | `firestore`: verified against a real database; free-tier quotas are small | `gcs`: a public-read bucket and a private bucket (not yet run against real GCS) |
 
 You can mix them. Everything below shows the Supabase variant first and the Google differences after.
 
