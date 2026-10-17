@@ -1,0 +1,162 @@
+{
+  "transcript_segments": [
+    {
+      "start_timestamp": "00:00",
+      "end_timestamp": "00:02",
+      "text": "Dear students welcome to Gate Smashers."
+    },
+    {
+      "start_timestamp": "00:02",
+      "end_timestamp": "00:08",
+      "text": "Iss video me explain karne ja raha hu power set aur power set ko me with example explain karunga taki aapke competitive exams, college university exam kahi pe bhi aapko iss se related puch le aap easily answer kar sakte ho."
+    },
+    {
+      "start_timestamp": "00:08",
+      "end_timestamp": "00:22",
+      "text": "To sabse pehle what is the power set: If A is a finite set, then set of all subsets of A is called a power set of A."
+    },
+    {
+      "start_timestamp": "00:22",
+      "end_timestamp": "00:32",
+      "text": "Matlab hamare paas set diya hua hai A aur A humne liya hai yahan pe finite set matlab number of elements in A is finite, jo cardinality hai wo kya hai iski finite."
+    },
+    {
+      "start_timestamp": "00:32",
+      "end_timestamp": "00:37",
+      "text": "To iske saare subsets ke collection ko hum kya bolte hai power set bolte hai."
+    },
+    {
+      "start_timestamp": "00:37",
+      "end_timestamp": "00:43",
+      "text": "To dekho yahan pe let's say mere paas A diya hua hai, usme teen elements hai 1, 2, and 3, so what will be the power set?"
+    },
+    {
+      "start_timestamp": "00:43",
+      "end_timestamp": "00:49",
+      "text": "So power set nikalne ke liye aapko karna kya hai yahan pe saare iske subset likhne hai."
+    },
+    {
+      "start_timestamp": "00:49",
+      "end_timestamp": "00:58",
+      "text": "To jab bhi aap subset likhte ho, aapko already me bata chuka hu last video me subset, proper subset, cardinality saare points jo hai chhote chhote aapko bata chuka hu."
+    },
+    {
+      "start_timestamp": "00:58",
+      "end_timestamp": "01:03",
+      "text": "To fatfat se fir dekh lo ek baar, yahan pe 1, 2, and 3 teen elements hai to sabse pehla jo value aayegi, sabse pehla aap keh sakte ho subset by default wo hota hai kaunsa phi."
+    },
+    {
+      "start_timestamp": "01:03",
+      "end_timestamp": "01:17",
+      "text": "Sabse pehla subset, matlab phi jo hai aap bol sakte ho it is a subset of every set, that is what phi jisko hum empty bhi bolte hai, empty set bhi bol dete hai, null set bhi bol dete hai."
+    },
+    {
+      "start_timestamp": "01:17",
+      "end_timestamp": "01:36",
+      "text": "Phi ke baad dekho ab next kaunsa aayega, next kaunsa aa sakta hai akela 1 matlab aapka jisko hum bol sakte hai ki size iski cardinality kitni hai 1 matlab cardinality kitni hai 1 to us size ka subset aap nikaal lo."
+    },
+    {
+      "start_timestamp": "01:36",
+      "end_timestamp": "01:52",
+      "text": "Matlab jab bhi aapko subset nikalne hai to sabse pehle aap kya karo wo saare subset likh lo jiski cardinality 0 ho, fir wo wale likh lo jiski cardinality 1 ho, fir wo wale likh lo jiski cardinality 2 ho, fir wo wale likh lo jiski cardinality 3 ho."
+    },
+    {
+      "start_timestamp": "01:52",
+      "end_timestamp": "01:56",
+      "text": "Matlab kehne ka ki subset jisme zero element ho dekho phi."
+    },
+    {
+      "start_timestamp": "01:56",
+      "end_timestamp": "02:07",
+      "text": "Subset jisme ek element ho to kaun kaun sa aayega ek to 1 aa sakta hai, ek dusra aapke paas 2 aa sakta hai aur aapke paas kaunsa aa sakta hai 3, dekho sab me kitne elements hai ek ek element hai theek hai na."
+    },
+    {
+      "start_timestamp": "02:07",
+      "end_timestamp": "02:24",
+      "text": "Fir hum nikaal lenge do wala matlab jiske andar do elements ho wo saare subset likh lo to wo kaise likhoge aap 1 2, iske alawa 2 3, iske alawa 1 and 3, getting the point or not, kuch bhi nahi hai."
+    },
+    {
+      "start_timestamp": "02:24",
+      "end_timestamp": "02:30",
+      "text": "Zaroori nahi hai ki aapko isi term me yaad rakhna, aap kaise marzi nikaal lo aapko just saare ke saare subset hi likhne hai."
+    },
+    {
+      "start_timestamp": "02:30",
+      "end_timestamp": "02:37",
+      "text": "To subset likhne ke liye sabse pehle maine likha wo wala subset jiske andar 0 value matlab phi."
+    },
+    {
+      "start_timestamp": "02:37",
+      "end_timestamp": "02:41",
+      "text": "Fir wo wale subset jiske andar ek ek value ho to ek ek value wale ye ho gaye teen."
+    },
+    {
+      "start_timestamp": "02:41",
+      "end_timestamp": "02:46",
+      "text": "Fir uske baad do wale to wo aa gaye aapke 1 2, 2 3 and 1 3."
+    },
+    {
+      "start_timestamp": "02:46",
+      "end_timestamp": "03:00",
+      "text": "Fir uske baad aap teen wala to teen wala matlab pura ka pura jisko hum trivial bhi bolte hai, isko kya bolte hai trivial subset bhi bol dete hai because ye iss subset ke barabar hai jo aapka set diya hua hai uske barabar hai isliye hum bolte hai"
+    }
+  ],
+  "visual_events": [
+    {
+      "timestamp": "00:00",
+      "referent_kind": "text",
+      "content_description": "On the whiteboard, pre-written text in black ink reads: 'Power Set : If 'A' is finite set then set of all subsets of A is called Power set of 'A'.' Below this: 'If A = { 1, 2, 3 }', followed below by 'P(A) = ?'",
+      "words_spoken_nearby": "Dear students welcome to Gate Smashers. Iss video me explain karne ja raha hu power set",
+      "confidence": 0.98
+    },
+    {
+      "timestamp": "00:50",
+      "referent_kind": "equation",
+      "content_description": "The instructor writes an open curly bracket '{' beneath 'P(A) = ?' to begin listing the elements of the power set.",
+      "words_spoken_nearby": "So power set nikalne ke liye aapko karna kya hai yahan pe saare iske subset likhne hai.",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "01:09",
+      "referent_kind": "equation",
+      "content_description": "The instructor writes the Greek letter 'phi' followed by a comma after the open curly bracket: '{ phi,'.",
+      "words_spoken_nearby": "sabse pehla aap keh sakte ho subset by default wo hota hai kaunsa phi.",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "01:27",
+      "referent_kind": "equation",
+      "content_description": "The instructor writes '{ 1 },' following '{ phi,'.",
+      "words_spoken_nearby": "Next kaun sa aa sakta hai akela 1 matlab aapka jisko hum bol sakte hai",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "01:42",
+      "referent_kind": "text",
+      "content_description": "To the right of the definition and set A, the instructor writes '0, 1, 2, 3' representing cardinalities.",
+      "words_spoken_nearby": "wo saare subset likh lo jiski cardinality 0 ho, fir wo wale likh lo jiski cardinality 1 ho, fir wo wale likh lo jiski cardinality 2 ho, fir wo wale likh lo jiski cardinality 3 ho.",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "02:00",
+      "referent_kind": "equation",
+      "content_description": "The instructor writes '{ 2 }, { 3 },' following '{ 1 },'.",
+      "words_spoken_nearby": "ek to 1 aa sakta hai, ek dusra aapke paas 2 aa sakta hai aur aapke paas kaunsa aa sakta hai 3",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "02:14",
+      "referent_kind": "equation",
+      "content_description": "The instructor writes the two-element subsets: '{ 1, 2 }, { 2, 3 }, { 1, 3 },'.",
+      "words_spoken_nearby": "wo kaise likhoge aap 1 2, iske alawa 2 3, iske alawa 1 and 3",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "02:49",
+      "referent_kind": "equation",
+      "content_description": "The instructor writes the three-element subset: '{ 1, 2, 3 }' at the end of the list.",
+      "words_spoken_nearby": "Fir uske baad aap teen wala to teen wala matlab pura ka pura jisko hum trivial bhi bolte hai",
+      "confidence": 0.95
+    }
+  ]
+}

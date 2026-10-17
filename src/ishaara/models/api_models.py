@@ -1,0 +1,154 @@
+"""Request and response bodies and small shared value models for the HTTP API."""
+
+from datetime import datetime
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints
+
+from ishaara.models.domain import (
+    NarrationCue,
+    NarrationLanguage,
+    PipelineStage,
+    VideoRecord,
+    VideoStatus,
+)
+
+
+class AuthenticatedUser(BaseModel):
+    """The caller identified from a verified Firebase ID token.
+
+    Attributes:
+        uid: Firebase user id.
+        email: Email address on the token, if any.
+    """
+
+    uid: str
+    email: str | None = None
+
+
+class YouTubeVideoMetadata(BaseModel):
+    """The subset of YouTube Data API video fields the pipeline needs.
+
+    Attributes:
+        title: Video title.
+        channel_title: Name of the uploading channel.
+        duration_seconds: Video length in seconds.
+        privacy_status: ``public``, ``unlisted`` or ``private``.
+        embeddable: Whether the owner allows embedding.
+        live_broadcast_content: ``none``, ``live`` or ``upcoming``.
+    """
+
+    title: str
+    channel_title: str
+    duration_seconds: int
+    privacy_status: str
+    embeddable: bool
+    live_broadcast_content: str
+
+
+class VideoSummary(BaseModel):
+    """One row of a user's submission history.
+
+    Attributes:
+        video_key: Key of the processed video.
+        title: Video title.
+        submitted_at: When the user submitted it.
+    """
+
+    video_key: str
+    title: str
+    submitted_at: datetime
+
+
+class VideoStatusResponse(BaseModel):
+    """What the frontend polls while a video is processed.
+
+    Attributes:
+        video_key: Key of the video, used in every other video route.
+        status: Lifecycle state.
+        stage: Current pipeline stage while processing.
+        progress_percent: 0 to 100.
+        title: Video title.
+        duration_seconds: Video length.
+        error_code: Set when ``status`` is ``failed``.
+        error_message: Human-readable failure reason.
+    """
+
+    video_key: str
+    status: VideoStatus
+    stage: PipelineStage | None
+    progress_percent: int
+    title: str
+    duration_seconds: int
+    error_code: str | None
+    error_message: str | None
+
+    @classmethod
+    def from_record(cls, record: VideoRecord) -> "VideoStatusResponse":
+        """Build the response from a stored record."""
+        return cls(
+            video_key=record.video_key,
+            status=record.status,
+            stage=record.stage,
+            progress_percent=record.progress_percent,
+            title=record.title,
+            duration_seconds=record.duration_seconds,
+            error_code=record.error_code,
+            error_message=record.error_message,
+        )
+
+
+class SubmitVideoRequest(BaseModel):
+    """Body of ``POST /v1/videos``.
+
+    Attributes:
+        youtube_url: A YouTube link or bare video id.
+        narration_language: Language to narrate in.
+    """
+
+    youtube_url: str = Field(min_length=1, max_length=300)
+    narration_language: NarrationLanguage
+
+
+class UserVideosResponse(BaseModel):
+    """Body of ``GET /v1/me/videos``."""
+
+    videos: list[VideoSummary]
+
+
+class CuesResponse(BaseModel):
+    """Body of ``GET /v1/videos/{video_key}/cues``."""
+
+    cues: list[NarrationCue]
+
+
+MAX_QUESTION_CHARACTERS = 500
+
+
+class AskQuestionRequest(BaseModel):
+    """Body of ``POST /v1/videos/{video_key}/questions``.
+
+    Attributes:
+        question: The student's question, trimmed, 1 to 500 characters.
+        at_seconds: Where in the video the student is, if they want an answer about that moment.
+    """
+
+    question: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_QUESTION_CHARACTERS),
+    ]
+    at_seconds: float | None = Field(default=None, ge=0)
+
+
+class QuestionResponse(BaseModel):
+    """Body of the answer to a question.
+
+    Attributes:
+        answer_text: The written answer.
+        answer_audio_url: The spoken answer, or ``null`` if it could not be voiced.
+        referenced_seconds: Lecture times the answer relies on, ascending.
+    """
+
+    answer_text: str
+    answer_audio_url: str | None
+    referenced_seconds: list[float]

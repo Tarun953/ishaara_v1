@@ -1,0 +1,88 @@
+{
+  "judgements": [
+    {
+      "event_index": 0,
+      "speech_coverage": "not_spoken",
+      "gap_summary": "Slide title 'Circular Tracks' with bullet points '1. Meeting at the starting point' and '2. Number of distinct meeting points'.",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 1,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 2,
+      "speech_coverage": "partly_spoken",
+      "gap_summary": "A starting tick mark is drawn at the bottom of the circle with 'A' and 'B' and rightward arrows indicating their running direction.",
+      "confidence": 0.9
+    },
+    {
+      "event_index": 3,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 4,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 5,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 6,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 7,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.9
+    },
+    {
+      "event_index": 8,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.9
+    },
+    {
+      "event_index": 9,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.95
+    },
+    {
+      "event_index": 10,
+      "speech_coverage": "not_spoken",
+      "gap_summary": "The screen is cleared of all annotations, returning to the blank slide text.",
+      "confidence": 0.9
+    },
+    {
+      "event_index": 11,
+      "speech_coverage": "partly_spoken",
+      "gap_summary": "A new circular track diagram is drawn on the right.",
+      "confidence": 0.85
+    },
+    {
+      "event_index": 12,
+      "speech_coverage": "partly_spoken",
+      "gap_summary": "A starting tick mark is drawn at the bottom of the track next to the written speeds S sub A = 5 meters per second and S sub B = 3 meters per second.",
+      "confidence": 0.85
+    },
+    {
+      "event_index": 13,
+      "speech_coverage": "fully_spoken",
+      "gap_summary": "",
+      "confidence": 0.9
+    }
+  ]
+}
