@@ -143,6 +143,25 @@ def test_history_lists_submissions_newest_first(client: TestClient) -> None:
     ]
 
 
+def test_history_rows_carry_duration_and_current_status(client: TestClient) -> None:
+    client.post("/v1/videos", json=BODY)
+    _wait_for_final_status(client, VIDEO_KEY)
+
+    row = client.get("/v1/me/videos").json()["videos"][0]
+
+    assert row["status"] == "ready"
+    assert row["duration_seconds"] > 0
+    assert row["error_message"] is None
+
+
+def test_video_status_includes_the_channel_title(client: TestClient) -> None:
+    submitted = client.post("/v1/videos", json=BODY).json()
+
+    polled = client.get(f"/v1/videos/{VIDEO_KEY}").json()
+    assert submitted["channel_title"]
+    assert polled["channel_title"] == submitted["channel_title"]
+
+
 def test_history_limit_is_validated(client: TestClient) -> None:
     assert client.get("/v1/me/videos", params={"limit": 0}).status_code == 422
 

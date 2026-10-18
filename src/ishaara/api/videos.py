@@ -1,5 +1,6 @@
 """Video endpoints: submit, status, history, cues, WebVTT description track and notes."""
 
+import asyncio
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -70,8 +71,15 @@ async def list_my_videos(
     videos: Annotated[VideoRepository, Depends(get_video_repository)],
     limit: Annotated[int, Query(ge=1, le=MAX_HISTORY_LIMIT)] = 20,
 ) -> UserVideosResponse:
-    """Return the caller's submitted videos, newest first."""
-    return UserVideosResponse(videos=await videos.list_for_user(user.uid, limit))
+    """Return the caller's submitted videos, newest first, with each video's current state."""
+    history = await videos.list_for_user(user.uid, limit)
+    records = await asyncio.gather(*(videos.get(row.video_key) for row in history))
+    return UserVideosResponse(
+        videos=[
+            row if record is None else row.with_video(record)
+            for row, record in zip(history, records, strict=True)
+        ]
+    )
 
 
 @router.get("/videos/{video_key}/cues")
