@@ -53,11 +53,27 @@ class VideoSummary(BaseModel):
         video_key: Key of the processed video.
         title: Video title.
         submitted_at: When the user submitted it.
+        duration_seconds: Video length, filled in from the stored video.
+        status: Lifecycle state of the video, filled in from the stored video.
+        error_message: Human-readable failure reason when ``status`` is ``failed``.
     """
 
     video_key: str
     title: str
     submitted_at: datetime
+    duration_seconds: int | None = None
+    status: VideoStatus | None = None
+    error_message: str | None = None
+
+    def with_video(self, record: VideoRecord) -> "VideoSummary":
+        """Return a copy carrying the live state of the stored video."""
+        return self.model_copy(
+            update={
+                "duration_seconds": record.duration_seconds,
+                "status": record.status,
+                "error_message": record.error_message,
+            }
+        )
 
 
 class VideoStatusResponse(BaseModel):
@@ -69,6 +85,7 @@ class VideoStatusResponse(BaseModel):
         stage: Current pipeline stage while processing.
         progress_percent: 0 to 100.
         title: Video title.
+        channel_title: Name of the uploading channel.
         duration_seconds: Video length.
         error_code: Set when ``status`` is ``failed``.
         error_message: Human-readable failure reason.
@@ -79,6 +96,7 @@ class VideoStatusResponse(BaseModel):
     stage: PipelineStage | None
     progress_percent: int
     title: str
+    channel_title: str
     duration_seconds: int
     error_code: str | None
     error_message: str | None
@@ -92,6 +110,7 @@ class VideoStatusResponse(BaseModel):
             stage=record.stage,
             progress_percent=record.progress_percent,
             title=record.title,
+            channel_title=record.channel_title,
             duration_seconds=record.duration_seconds,
             error_code=record.error_code,
             error_message=record.error_message,
