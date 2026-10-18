@@ -6,6 +6,8 @@ explain aloud**, writes a short spoken description of each one, and voices it. A
 video, pauses at each moment, plays the description and resumes. Students can also ask questions
 about the lecture and hear the answer, and download accessible notes.
 
+Frontend Repo: https://github.com/cyberlord-007/ishaara_ui_v1
+
 ## Status
 
 | | |
